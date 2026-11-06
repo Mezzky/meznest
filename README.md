@@ -21,7 +21,7 @@ Open http://127.0.0.1:4317. On this computer, the global npm shim is broken; `./
 4. Create a task and select the full team or a single role.
 5. Open tasks to inspect live text and completed handoffs. Answer command/file approvals in the bell inbox. Pause interrupts active work; retry resumes from the last completed role.
 
-The team is Milo (lead), Luna (designer), Finn (frontend), Otto (backend), and Pip (review). Roles run sequentially and share previous handoffs. This version uses the Codex app-server protocol and your local ChatGPT sign-in, without reading authentication files or accepting API keys. Account limits apply. The computer and Meznest server must remain running for work to continue.
+The team is Comoy (lead), Sukijem (designer), Dono (frontend), Kiwir (backend), and Ijum (review). Roles run sequentially and share previous handoffs. This version uses the Codex app-server protocol and your local ChatGPT sign-in, without reading authentication files or accepting API keys. Account limits apply. The computer and Meznest server must remain running for work to continue.
 
 ## What works
 
@@ -65,3 +65,11 @@ The engine tests use a mock protocol transport to verify scheduling, approvals, 
 - `tests/engine.test.mjs`: task engine tests
 
 Protocol reference: https://learn.chatgpt.com/docs/app-server
+
+## November 6 workspace update
+
+- Projects now have saved folders, per-project task history, continuation prompts, and redo as a new task. Tasks retain their original project folder when selection changes.
+- Workers are Comoy, Sukijem, Dono, Kiwir, and Ijum. Office animations include articulated walking/typing, brief social pauses, and a coffee station. Visual QA remains incomplete.
+- At the user's request, workers now use approvalPolicy never and danger-full-access. Earlier workspace-write/no-network descriptions below are historical.
+- Development uses Webpack to avoid the observed Turbopack reload loop. Windows Codex executable discovery is included.
+- Nine engine tests and TypeScript checks pass. Real single-role tasks completed locally; full five-role execution remains unverified. Old test output files were deleted at the user's request; their task history remains local.

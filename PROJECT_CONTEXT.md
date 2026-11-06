@@ -37,17 +37,17 @@ The current scene is built procedurally with Three.js; it does not require downl
 
 | Name | Role | Responsibility |
 |---|---|---|
-| Milo | Team lead | Plan work, break down briefs, coordinate handoffs |
-| Luna | Designer | Layouts, visual direction, responsive design, accessibility guidance |
-| Finn | Frontend developer | React/Next.js pages, components, interactions |
-| Otto | Backend developer | APIs, databases, authentication, server functionality |
-| Pip | Reviewer / QA | Review implementation, run checks, fix clear defects, report limitations |
+| Comoy | Team lead | Plan work, break down briefs, coordinate handoffs |
+| Sukijem | Designer | Layouts, visual direction, responsive design, accessibility guidance |
+| Dono | Frontend developer | React/Next.js pages, components, interactions |
+| Kiwir | Backend developer | APIs, databases, authentication, server functionality |
+| Ijum | Reviewer / QA | Review implementation, run checks, fix clear defects, report limitations |
 
 Roles share one underlying coding engine and run **one at a time**.
 
 A full-team task follows:
 
-**Milo → Luna → Finn → Otto → Pip**
+**Comoy → Sukijem → Dono → Kiwir → Ijum**
 
 Users can also assign a focused task to one teammate.
 
@@ -276,3 +276,11 @@ Do not remove the generated Next.js agent-rules block.
 7. Later, consider Git checkpoints, richer project previews, usage visibility, and more durable storage.
 
 Preserve the current Meznest identity and cozy low-poly design while continuing development.
+
+## November 6 workspace update
+
+- Projects now have saved folders, per-project task history, continuation prompts, and redo as a new task. Tasks retain their original project folder when selection changes.
+- Workers are Comoy, Sukijem, Dono, Kiwir, and Ijum. Office animations include articulated walking/typing, brief social pauses, and a coffee station. Visual QA remains incomplete.
+- At the user's request, workers now use approvalPolicy never and danger-full-access. Earlier workspace-write/no-network descriptions below are historical.
+- Development uses Webpack to avoid the observed Turbopack reload loop. Windows Codex executable discovery is included.
+- Nine engine tests and TypeScript checks pass. Real single-role tasks completed locally; full five-role execution remains unverified. Old test output files were deleted at the user's request; their task history remains local.

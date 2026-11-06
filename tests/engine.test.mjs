@@ -45,6 +45,9 @@ test("queue runs one worker, carries handoffs and completes only on real complet
   const second = engine.add({ brief: "Review it", roles: ["review"] });
   await tick();
   assert.equal(first.status, "running");
+  const workerConfig = requests.find((r) => r.method === "thread/start").params;
+  assert.equal(workerConfig.approvalPolicy, "never");
+  assert.equal(workerConfig.sandbox, "danger-full-access");
   assert.equal(second.status, "queued");
   assert.equal(requests.filter((r) => r.method === "turn/start").length, 1);
   engine.message({
@@ -156,4 +159,20 @@ test("worker failures are visible and do not count as completed work", async (t)
   assert.equal(task.stage, 0);
   assert.equal(task.history.length, 0);
   assert.equal(task.error, "Usage limit reached");
+});
+
+test("projects retain task folders and redo preserves project history", (t) => {
+  const { engine, directory } = fixture(t);
+  const original = engine.state.settings.workspace;
+  const first = engine.add({ brief: "First project work", roles: ["frontend"] });
+  engine.addProject({ name: "Second", workspace: path.join(directory, "second"), createFolder: true });
+  const second = engine.add({ brief: "Second project work", roles: ["review"] });
+  assert.equal(first.workspace, original);
+  assert.notEqual(first.projectId, second.projectId);
+  engine.redo(first.id);
+  const redo = engine.state.tasks.at(-1);
+  assert.equal(redo.workspace, first.workspace);
+  assert.equal(redo.projectId, first.projectId);
+  assert.notEqual(redo.id, first.id);
+  assert.equal(engine.state.tasks.length, 3);
 });

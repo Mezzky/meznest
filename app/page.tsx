@@ -152,6 +152,9 @@ function Modal({
 }
 export default function Home() {
   const [state, setState] = useState<OfficeState | null>(null);
+  const [projectHistory, setProjectHistory] = useState<string | null>(null);
+  const [addingProject, setAddingProject] = useState(false);
+  const [projectSearch, setProjectSearch] = useState("");
   const [tab, setTab] = useState<Tab>("Office");
   const [selected, setSelected] = useState<Role>("lead");
   const [modal, setModal] = useState<
@@ -164,6 +167,16 @@ export default function Home() {
   const [resetKey, setResetKey] = useState(0);
   const [filter, setFilter] = useState("All tasks");
   const [sidebar, setSidebar] = useState(false);
+  const [celebrating, setCelebrating] = useState(false);
+  const completedRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!state) return;
+    const done = new Set(state.tasks.filter(t => t.status === "done").map(t => t.id));
+    const fresh = completedRef.current && [...done].some(id => !completedRef.current!.has(id));
+    completedRef.current = done;
+    if (fresh) setCelebrating(true);
+  }, [state]);
+  useEffect(() => { if (celebrating) { const timer = setTimeout(() => setCelebrating(false), 4000); return () => clearTimeout(timer); } }, [celebrating]);
   const [singleTask, setSingleTask] = useState(false);
   function openTask(single = false) {
     setSingleTask(single);
@@ -172,22 +185,31 @@ export default function Home() {
   useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
+    let failures = 0;
+    let controller: AbortController | undefined;
     async function refresh() {
       try {
-        const r = await fetch("/api/office", { cache: "no-store" });
+        controller = new AbortController();
+        const timeout = setTimeout(() => controller?.abort(), 12000);
+        let r: Response;
+        try { r = await fetch("/api/office", { cache: "no-store", signal: controller.signal }); } finally { clearTimeout(timeout); }
+        if (!r.headers.get("content-type")?.includes("application/json")) throw new Error("Meznest server returned HTML. Restart the development server and refresh.");
         const s = await r.json();
         if (!r.ok) throw new Error(s.error);
-        if (!disposed) setState(s);
+        failures = 0;
+        if (!disposed) { setState(s); setError(""); }
       } catch (e) {
-        if (!disposed) setError((e as Error).message);
+        failures++;
+        if (!disposed) setError((e as Error).name === "AbortError" ? "The server took too long to respond. Retrying shortly…" : (e as Error).message);
       } finally {
-        if (!disposed) timer = setTimeout(refresh, 1800);
+        if (!disposed) timer = setTimeout(refresh, failures ? Math.min(30000, 3000 * 2 ** Math.min(failures, 4)) : 3000);
       }
     }
     void refresh();
     return () => {
       disposed = true;
       clearTimeout(timer);
+      controller?.abort();
     };
   }, []);
   async function act(data: Record<string, unknown>) {
@@ -199,7 +221,8 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      const s = await r.json();
+      if (!r.headers.get("content-type")?.includes("application/json")) throw new Error("Meznest server returned HTML. Restart the development server and refresh.");
+        const s = await r.json();
       if (!r.ok) throw new Error(s.error);
       setState(s);
       return true;
@@ -215,6 +238,7 @@ export default function Home() {
   const running = tasks.find((t) => ["running", "waiting"].includes(t.status));
   const active = running?.roles[running.stage];
   const member = team.find((t) => t.id === selected)!;
+  const memberResult = [...tasks].reverse().find(t => t.history.some(h => h.role === selected));
   const memberTask = tasks.find(
     (t) =>
       t.roles[t.stage] === selected &&
@@ -552,6 +576,7 @@ export default function Home() {
                         : `Give ${member.name} a task`}
                       <ArrowRight size={15} />
                     </button>
+                    {memberResult && <button className="button primary full" onClick={() => setDetail(memberResult.id)}>View {member.name}’s latest result <ArrowRight size={15} /></button>}
                     <div className="member-pagination">
                       {team.map((m) => (
                         <button
@@ -817,52 +842,20 @@ export default function Home() {
                 ))}
               </div>
             )}
-            {tab === "Projects" && (
-              <section className="panel project-panel">
-                <span className="project-folder">
-                  <FolderOpen size={32} />
-                </span>
-                <div>
-                  <span className="eyebrow">CONNECTED PROJECT</span>
-                  <h2>
-                    {state?.settings.workspace.split(/[\\/]/).pop() ||
-                      "Your local project"}
-                  </h2>
-                  <code>{state?.settings.workspace || "Loading…"}</code>
-                  <p>
-                    Your team reads and edits files in this folder. Tasks and
-                    history stay saved locally.
-                  </p>
-                  <div className="project-actions">
-                    <button
-                      className="button outline"
-                      onClick={() => setModal("settings")}
-                    >
-                      Change project <FolderOpen size={15} />
-                    </button>
-                    {state?.settings.previewUrl ? (
-                      <a
-                        className="button primary"
-                        href={state.settings.previewUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Open preview <ExternalLink size={15} />
-                      </a>
-                    ) : (
-                      <button
-                        className="button outline"
-                        onClick={() => setModal("settings")}
-                      >
-                        Set preview address <ArrowUpRight size={15} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </section>
-            )}
+            {celebrating && <div className="celebration" role="status"><strong>Hooray! 🎉 Teamwork complete!</strong>{Array.from({length:32},(_,i)=><i key={i} style={{left:i*3.1+"%",animationDelay:(i%7)*0.1+"s",background:["#b77c5b","#7a9e91","#c7a45e","#ae8ba8"][i%4]}} />)}</div>}
+            {tab === "Projects" && <div className="projects-hub">
+              <header className="projects-heading"><div><span className="eyebrow">A HOME FOR EVERY IDEA</span><h2>Your projects</h2><p>Pick up where you left off. Every brief, handoff, and result stays with its project.</p></div><button className="button primary" onClick={()=>setAddingProject(true)}><Plus size={17}/> New project</button></header>
+              <div className="projects-toolbar"><input aria-label="Search projects" placeholder="Find a project…" value={projectSearch} onChange={e=>setProjectSearch(e.target.value)}/><span>{state?.projects?.length || 0} local projects</span></div>
+              <div className="projects-grid">{state?.projects?.filter(p=>p.name.toLowerCase().includes(projectSearch.toLowerCase())).map(project=>{
+                const history=tasks.filter(t=>t.projectId===project.id); const completed=history.filter(t=>t.status==="done").length;
+                return <article className="project-card" key={project.id}><div className="project-card-top"><span className="project-folder"><FolderOpen size={25}/></span><span className="project-chip">{project.id===state.settings.projectId ? "Current project" : "Local folder"}</span></div><h3>{project.name}</h3><code title={project.workspace}>{project.workspace}</code><div className="project-counts"><span><FileText size={15}/>{history.length} tasks</span><span><CheckCheck size={15}/>{completed} completed</span></div><div className="project-card-actions"><button className="button primary" disabled={busy} onClick={async()=>{if(await act({action:"project-select",id:project.id}))openTask(false);}}>Continue work <ArrowRight size={15}/></button><button className="button outline" onClick={()=>setProjectHistory(project.id)}>History <Clock3 size={15}/></button></div>{project.previewUrl && <a className="project-preview-link" href={project.previewUrl} target="_blank" rel="noreferrer">Open project preview <ExternalLink size={14}/></a>}</article>;
+              })}</div>
+              {!state?.projects?.length && <div className="projects-empty"><FolderOpen size={36}/><h3>Your next idea starts here</h3><p>Add a folder and give your team their first brief.</p><button className="button primary" onClick={()=>setAddingProject(true)}>Add your first project</button></div>}
+            </div>}
           </div>
         </main>
+        {addingProject && <Modal title="A home for your next idea" subtitle="Connect a folder on this computer. Your team saves its work there." close={()=>setAddingProject(false)}><form className="form" onSubmit={async e=>{e.preventDefault();const d=new FormData(e.currentTarget);if(await act({action:"project-add",name:d.get("name"),workspace:d.get("workspace"),createFolder:d.get("createFolder")==="on"}))setAddingProject(false);}}><label>Project name<input name="name" required placeholder="My next big idea"/></label><label>Project folder<input name="workspace" required placeholder="Paste the full folder path"/><small>Copy the folder path from File Explorer.</small></label><label className="project-create-checkbox"><input type="checkbox" name="createFolder"/> Create the folder if it doesn’t exist</label><button className="button primary full" disabled={busy}>Create project <ArrowRight size={16}/></button></form></Modal>}
+        {projectHistory && (()=>{const project=state?.projects?.find(p=>p.id===projectHistory);if(!project)return null;const history=tasks.filter(t=>t.projectId===project.id).slice().reverse();return <Modal title={project.name} subtitle="Project history · every step, in one place" close={()=>setProjectHistory(null)}><div className="project-history"><code>{project.workspace}</code><button className="button primary" disabled={busy} onClick={async()=>{if(await act({action:"project-select",id:project.id})){setProjectHistory(null);openTask(false);}}}>Continue with a new prompt <Plus size={16}/></button><p className="history-note">Continue builds on previous work. Redo runs the same brief again and keeps the original history; it does not restore old files.</p>{history.length===0 && <div className="projects-empty"><Clock3 size={28}/><h3>A fresh start</h3><p>Your project’s work will appear here.</p></div>}{history.map(t=><article className="history-entry" key={t.id}><div className="history-entry-meta"><span className="project-chip">{labels[t.status]}</span><time>{new Date(t.createdAt).toLocaleString()}</time></div><h3>{t.title}</h3><p>{t.brief}</p><div className="project-actions"><button className="button outline" onClick={()=>{setProjectHistory(null);setDetail(t.id);}}>View results <ArrowUpRight size={15}/></button><button className="button outline" disabled={busy} onClick={()=>void act({action:"redo",id:t.id})}><RotateCcw size={15}/> Redo task</button></div></article>)}</div></Modal>})()}
         {modal === "task" && (
           <NewTask
             single={singleTask}
@@ -960,7 +953,7 @@ export default function Home() {
             close={() => setDetail(null)}
           >
             <div className="task-detail">
-              <h3>The brief</h3>
+              <h3>Result folder</h3><code>{taskDetail.workspace || state?.settings.workspace}</code><h3>The brief</h3>
               <p className="preserve">{taskDetail.brief}</p>
               <div className="handoff-chain">
                 {taskDetail.roles.map((r, i) => (
@@ -975,11 +968,12 @@ export default function Home() {
                 ))}
               </div>
               {taskDetail.history.map((h, i) => (
-                <details key={i} open={i === taskDetail.history.length - 1}>
+                <details key={i} open>
                   <summary>
-                    {team.find((m) => m.id === h.role)?.name}’s handoff
+                    {team.find((m) => m.id === h.role)?.name}’s result
                   </summary>
                   <pre>{h.text || "No text output was returned."}</pre>
+                  {Array.from(new Set(h.text.match(/public\/[a-zA-Z0-9_./-]+\.html/g) || [])).filter(file => !file.includes("..")).map(file => <a key={file} className="button primary" href={file.replace(/^public/, "")} target="_blank" rel="noreferrer">Open preview: {file.split("/").pop()} <ExternalLink size={15} /></a>)}
                 </details>
               ))}
               {taskDetail.status !== "done" && taskDetail.output && (

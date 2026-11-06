@@ -1,52 +1,54 @@
 export const team = [
   {
     id: "lead",
-    name: "Milo",
+    name: "Comoy",
     role: "Team lead",
     color: "#b77c5b",
-    initial: "M",
+    initial: "C",
     description: "A little structure for your big ideas.",
     skills: ["Planning", "Coordination", "Architecture"],
   },
   {
     id: "design",
-    name: "Luna",
+    name: "Sukijem",
     role: "Designer",
     color: "#ae8ba8",
-    initial: "L",
+    initial: "S",
     description: "Thoughtful details. Beautiful experiences.",
     skills: ["UI / UX", "Design systems", "Responsive design"],
   },
   {
     id: "frontend",
-    name: "Finn",
+    name: "Dono",
     role: "Frontend developer",
     color: "#7a9e91",
-    initial: "F",
+    initial: "D",
     description: "Turning good designs into great interactions.",
     skills: ["React", "Next.js", "Accessibility"],
   },
   {
     id: "backend",
-    name: "Otto",
+    name: "Kiwir",
     role: "Backend developer",
     color: "#7e95b2",
-    initial: "O",
+    initial: "K",
     description: "Making everything work behind the scenes.",
     skills: ["APIs", "Databases", "Authentication"],
   },
   {
     id: "review",
-    name: "Pip",
+    name: "Ijum",
     role: "Reviewer & QA",
     color: "#c7a45e",
-    initial: "P",
+    initial: "I",
     description: "A fresh pair of eyes, before it goes out.",
     skills: ["Code review", "Testing", "Quality"],
   },
 ] as const;
 export type Role = (typeof team)[number]["id"];
 export type Task = {
+  projectId?: string;
+  workspace?: string;
   id: string;
   title: string;
   brief: string;
@@ -84,7 +86,8 @@ export type OfficeState = {
   approvals: Approval[];
   events: { id: string; text: string; time: string; role?: Role }[];
   paused: boolean;
-  settings: { workspace: string; previewUrl: string };
+  projects: { id: string; name: string; workspace: string; previewUrl: string }[];
+  settings: { workspace: string; previewUrl: string; projectId?: string };
   connection: {
     status: string;
     message: string;

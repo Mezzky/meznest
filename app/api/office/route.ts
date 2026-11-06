@@ -52,6 +52,9 @@ export async function POST(request: Request) {
       case "approval":
         engine.approve(data.id, data.decision, data.answers);
         break;
+      case "project-add": engine.addProject(data); break;
+      case "project-select": engine.selectProject(data.id); break;
+      case "redo": engine.redo(data.id); break;
       case "settings":
         engine.settings(data);
         break;

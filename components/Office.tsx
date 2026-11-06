@@ -10,7 +10,7 @@ import {
   type RefObject,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { RoundedBox, OrbitControls } from "@react-three/drei";
+import { RoundedBox, OrbitControls, Html } from "@react-three/drei";
 import * as THREE from "three";
 import { team, type Role } from "@/lib/team";
 
@@ -27,13 +27,13 @@ function LabelPositions({
 }: {
   elements: RefObject<(HTMLButtonElement | null)[]>;
 }) {
-  const { camera, size } = useThree();
+  const { camera, size, scene } = useThree();
   const point = useMemo(() => new THREE.Vector3(), []);
   useFrame(() => {
     deskPositions.forEach(([x, , z], i) => {
       const el = elements.current[i];
       if (!el) return;
-      point.set(x, 1.67, z + 0.35).project(camera);
+      const actor = scene.getObjectByName(`worker-${i}`); if (actor) { actor.getWorldPosition(point); point.y += 1.6; } else point.set(x, 1.67, z + 0.35); point.project(camera);
       el.style.left = ((point.x + 1) * size.width) / 2 + "px";
       el.style.top = ((-point.y + 1) * size.height) / 2 + "px";
       el.style.visibility = point.z > 1 ? "hidden" : "visible";
@@ -129,25 +129,53 @@ function Plant({ position, scale = 1 }: { position: V3; scale?: number }) {
     </group>
   );
 }
+function Limb({ start, end, color }: { start: V3; end: V3; color: string }) {
+  const direction = new THREE.Vector3(...end).sub(new THREE.Vector3(...start));
+  const midpoint = new THREE.Vector3(...start).add(new THREE.Vector3(...end)).multiplyScalar(0.5);
+  const rotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
+  return <mesh position={midpoint} quaternion={rotation} castShadow>
+    <capsuleGeometry args={[0.07, Math.max(0.01, direction.length() - 0.1), 4, 8]} />
+    <meshStandardMaterial color={color} roughness={0.85} />
+  </mesh>;
+}
 function Avatar({
   color,
   variant = 0,
   active = false,
+  walking = false,
+  holdingCoffee = false,
 }: {
   color: string;
   variant?: number;
   active?: boolean;
+  walking?: boolean;
+  holdingCoffee?: boolean;
 }) {
+  const legs = useRef<THREE.Group>(null);
   const head = useRef<THREE.Group>(null);
   const hand = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, delta) => {
+    const blend = 1 - Math.exp(-12 * delta);
+    legs.current?.children.forEach((leg, i) => {
+      const phase = clock.elapsedTime * 5 + i * Math.PI;
+      const hip = active ? -Math.PI / 2 : walking ? Math.sin(phase) * 0.28 : 0;
+      leg.rotation.x = THREE.MathUtils.lerp(leg.rotation.x, hip, blend);
+      const knee = leg.children.find((child) => child.name === "knee");
+      if (knee) {
+        const bend = active ? Math.PI / 2 : walking ? Math.max(0, -Math.cos(phase)) * 0.65 : 0;
+        knee.rotation.x = THREE.MathUtils.lerp(knee.rotation.x, bend, blend);
+      }
+    });
+    hand.current?.children.forEach((arm, i) => {
+      const swing = holdingCoffee && i === 1 ? Math.sin(clock.elapsedTime * 1.8) * 0.06 : walking && !active ? -Math.sin(clock.elapsedTime * 5 + i * Math.PI) * 0.28 : 0;
+      arm.rotation.x = THREE.MathUtils.lerp(arm.rotation.x, swing, blend);
+      arm.position.y = active ? 0.74 + Math.sin(clock.elapsedTime * 9 + i * Math.PI) * 0.008 : 0.74;
+    });
     if (head.current)
       head.current.rotation.z =
         Math.sin(clock.elapsedTime * 1.3 + variant) * 0.025;
     if (hand.current)
-      hand.current.rotation.x = active
-        ? Math.sin(clock.elapsedTime * 9) * 0.13
-        : 0;
+      hand.current.rotation.x = 0;
   });
   return (
     <group>
@@ -221,40 +249,135 @@ function Avatar({
         )}
       </group>
       <group ref={hand}>
-        {[-0.28, 0.28].map((x) => (
-          <group key={x}>
-            <Box
-              position={[x, 0.61, 0.14]}
-              size={[0.16, 0.3, 0.18]}
-              color={color}
-              radius={0.065}
-              rotation={[-0.65, 0, 0]}
-            />
-            <Box
-              position={[x, 0.49, 0.28]}
-              size={[0.14, 0.14, 0.19]}
-              color="#ebbd95"
-              radius={0.06}
-            />
-          </group>
-        ))}
+        {[-0.28, 0.28].map((x) => {
+          const shoulder: V3 = [x, 0, 0];
+          const drinking = holdingCoffee && x > 0;
+          const elbow: V3 = drinking ? [0.3, -0.18, 0.15] : active ? [x * 0.8, -0.025, 0.31] : [x, -0.19, 0];
+          const wrist: V3 = drinking ? [0.02, -0.12, 0.3] : active ? [x * 0.5 - 0.08, -0.025, 0.59] : [x, -0.34, 0];
+          return <group key={x} position={[0, 0.74, 0]}>
+            <Limb start={shoulder} end={elbow} color={color} />
+            <mesh position={elbow}><sphereGeometry args={[0.075, 10, 8]} /><meshStandardMaterial color={color} /></mesh>
+            <Limb start={elbow} end={wrist} color={color} />
+            <Box position={[wrist[0], wrist[1], wrist[2] + (active ? 0.055 : 0)]} size={[0.14, active ? 0.075 : 0.14, 0.16]} color="#ebbd95" radius={0.04} />
+            {holdingCoffee && x > 0 && <group position={[wrist[0] + 0.11, wrist[1] + 0.025, wrist[2]]}>
+              <mesh castShadow><cylinderGeometry args={[0.075, 0.065, 0.16, 12]} /><meshStandardMaterial color="#fff1df" /></mesh>
+              <mesh position={[0, 0.082, 0]}><cylinderGeometry args={[0.062, 0.062, 0.008, 12]} /><meshStandardMaterial color="#664936" /></mesh>
+              <mesh position={[-0.08, 0, 0]}><torusGeometry args={[0.045, 0.013, 6, 12]} /><meshStandardMaterial color="#fff1df" /></mesh>
+            </group>}
+          </group>;
+        })}
       </group>
-      {[-0.14, 0.14].map((x) => (
-        <group key={x}>
+      <group ref={legs}>{[-0.14, 0.14].map((x) => (
+        <group key={x} position={[x, 0.36, 0]}>
           <Box
-            position={[x, 0.16, 0.13]}
-            size={[0.18, 0.32, 0.25]}
+            position={[0, -0.075, 0]}
+            size={[0.18, 0.17, 0.19]}
+            color="#605d59"
+          />
+          <group name="knee" position={[0, -0.15, 0]}>
+          <Box
+            position={[0, -0.075, 0]}
+            size={[0.16, 0.17, 0.17]}
             color="#605d59"
           />
           <Box
-            position={[x, 0.04, 0.22]}
-            size={[0.2, 0.12, 0.35]}
+            position={[0, -0.16, 0.055]}
+            size={[0.2, 0.1, 0.29]}
             color="#f2e9db"
           />
+          </group>
         </group>
-      ))}
+      ))}</group>
     </group>
   );
+}
+function Worker({ index, active, color, onSelect }: { index: number; active: boolean; color: string; onSelect: () => void }) {
+  const actor = useRef<THREE.Group>(null);
+  const travel = useRef({ segment: 0, pause: index * 2, initialized: false, chatTime: 0, chatCooldown: 0, direction: 1 });
+  const [chatting, setChatting] = useState(false);
+  const point = useMemo(() => new THREE.Vector3(), []);
+  const otherPoint = useMemo(() => new THREE.Vector3(), []);
+  const [walking, setWalking] = useState(false);
+  const [activity, setActivity] = useState(0);
+  const [dx, , dz] = deskPositions[index];
+  // Back-row workers use the aisle between rows. Front-row workers use
+  // the open aisle in front. No diagonal shortcuts through desks or chairs.
+  const route = useMemo(() => {
+    const aisle = index < 3 ? -0.15 : 2.65;
+    return [[dx, 0, aisle], [0, 0, aisle], [0, 0, 2.65],
+      [3.5, 0, 2.65], [0, 0, 2.65], [0, 0, aisle], [dx, 0, aisle]] as V3[];
+  }, [dx, index]);
+  useFrame(({ scene }, delta) => {
+    const g = actor.current; if (!g) return;
+    const state = travel.current;
+    const dt = Math.min(delta, 0.05);
+    state.chatCooldown = Math.max(0, state.chatCooldown - dt);
+    if (active) {
+      g.position.set(0, 0.22, 0.62); g.rotation.y = Math.PI;
+      state.initialized = false;
+      if (walking) setWalking(false);
+      if (chatting) setChatting(false);
+      return;
+    }
+    if (!state.initialized) {
+      g.position.set(route[0][0] - dx, 0, route[0][2] - dz);
+      state.segment = 0; state.pause = 3 + index * 2; state.initialized = true;
+    }
+    if (state.pause > 0) { state.pause -= dt; if (walking) setWalking(false); return; }
+    const nextSegment = (state.segment + state.direction + route.length) % route.length;
+    const target = route[nextSegment];
+    const x = target[0] - dx - g.position.x, z = target[2] - dz - g.position.z;
+    const distance = Math.hypot(x, z);
+    if (distance < 0.015) {
+      state.segment = nextSegment;
+      state.pause = state.segment === 3 ? 4 : 0.4;
+      if (state.segment === 3) g.rotation.y = Math.PI / 3;
+      if (activity !== (state.segment === 3 ? 3 : 0)) setActivity(state.segment === 3 ? 3 : 0);
+      if (walking) setWalking(false);
+      return;
+    }
+    const stride = Math.min(distance, dt * 0.38);
+    const nextX = g.position.x + x / distance * stride;
+    const nextZ = g.position.z + z / distance * stride;
+    g.parent!.localToWorld(point.set(nextX, 0, nextZ));
+    let blocked = false;
+    for (let i = 0; i < team.length; i++) {
+      if (i === index) continue;
+      const other = scene.getObjectByName('worker-' + i);
+      if (other) {
+        other.getWorldPosition(otherPoint);
+        const nextDistance = Math.hypot(point.x - otherPoint.x, point.z - otherPoint.z);
+        g.getWorldPosition(point);
+        const oldDistance = Math.hypot(point.x - otherPoint.x, point.z - otherPoint.z);
+        g.parent!.localToWorld(point.set(nextX, 0, nextZ));
+        if (nextDistance < 0.8 && nextDistance < oldDistance) blocked = true;
+      }
+    }
+    state.chatTime = blocked ? state.chatTime + dt : 0;
+    const showChat = blocked && state.chatCooldown === 0 && state.chatTime < 2;
+    if (chatting !== showChat) setChatting(showChat);
+    if (blocked && state.chatTime >= 2 + index * 0.2) {
+      // Retrace the current aisle instead of waiting indefinitely face to face.
+      state.segment = nextSegment;
+      state.direction *= -1;
+      state.chatTime = 0;
+      state.chatCooldown = 20;
+    }
+    if (walking !== !blocked) setWalking(!blocked);
+    if (!blocked) { g.position.set(nextX, 0, nextZ); }
+    const facing = Math.atan2(x, z);
+    g.rotation.y += Math.atan2(Math.sin(facing - g.rotation.y), Math.cos(facing - g.rotation.y)) * Math.min(1, dt * 5);
+  });
+  return <group ref={actor} name={`worker-${index}`} onClick={e => { e.stopPropagation(); onSelect(); }}><Avatar color={color} variant={index} active={active} walking={walking} holdingCoffee={!active && activity === 3} />
+    {!active && chatting && <Html position={[0, 1.65, 0]} center><span style={{background:"#fff8e9",padding:"5px 10px",borderRadius:12,whiteSpace:"nowrap",fontSize:11,pointerEvents:"none"}}>Coffee chat ···</span></Html>}
+    {!active && activity === 2 && <Box position={[0, 0.65, 0.4]} size={[0.36, 0.06, 0.27]} color="#ae8ba8" rotation={[-0.3, 0, 0]} />}
+    {!active && activity === 1 && <group position={[0.28, 0.6, 0.35]} rotation={[0, 0, -0.4]}><Box size={[0.2, 0.2, 0.2]} color="#91b9ad" /><Box position={[0.16, 0.05, 0]} size={[0.22, 0.05, 0.05]} color="#91b9ad" /></group>}
+    </group>;
+}
+function ScreenActivity({ active }: { active: boolean }) {
+  const lines = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => { if (active) lines.current?.children.forEach((line, i) => { line.scale.x = 0.35 + ((clock.elapsedTime * 0.3 + i * 0.19) % 0.65); }); });
+  return <group ref={lines} visible={active} position={[0.1, 1.34, -0.374]}>{[0,1,2,3,4].map(i => <mesh key={i} position={[0, -i * 0.055, 0]}><planeGeometry args={[0.45, 0.018]} /><meshBasicMaterial color={i % 2 ? '#f9efd2' : '#426c58'} /></mesh>)}</group>;
 }
 function Desk({
   position,
@@ -348,24 +471,8 @@ function Desk({
         size={[0.08, 0.34, 0.08]}
         color="#b8b2a9"
       />
-      <group
-        position={[0, 0.42, 0.49]}
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelect();
-        }}
-        onPointerOver={() => {
-          document.body.style.cursor = "pointer";
-        }}
-        onPointerOut={() => {
-          document.body.style.cursor = "auto";
-        }}
-      >
-        <Avatar color={member.color} variant={index} active={active} />
-        <mesh position={[0, 0.7, 0]} visible={false}>
-          <boxGeometry args={[0.9, 1.5, 0.9]} />
-        </mesh>
-      </group>
+      <Worker index={index} active={active} color={member.color} onSelect={onSelect} />
+      <ScreenActivity active={active} />
       {selected && (
         <mesh position={[0, 0.025, 0.6]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.48, 0.53, 40]} />
@@ -507,7 +614,17 @@ function Room({
       ))}
       <Plant position={[-4.1, 0, -2.95]} scale={1.2} />
       <Plant position={[4.17, 0, -3.03]} scale={1.3} />
-      <Plant position={[4.28, 0, 3.12]} scale={1.15} />
+      <group position={[4.28, 0, 3.12]} rotation={[0, -Math.PI / 2, 0]}>
+        <Box position={[0, 0.38, 0]} size={[0.85, 0.76, 0.7]} color="#d8bd99" />
+        <Box position={[0, 0.79, 0]} size={[0.95, 0.08, 0.8]} color="#f2e7d6" />
+        <Box position={[0, 1.13, -0.08]} size={[0.62, 0.62, 0.45]} color="#5e7168" />
+        <Box position={[0, 1.15, 0.16]} size={[0.43, 0.32, 0.04]} color="#333f39" />
+        <Box position={[0, 1.18, 0.22]} size={[0.1, 0.07, 0.14]} color="#c6c8bd" />
+        <Box position={[0, 0.87, 0.18]} size={[0.5, 0.035, 0.32]} color="#424e46" />
+        <mesh position={[0, 0.97, 0.22]}><cylinderGeometry args={[0.075, 0.065, 0.16, 12]} /><meshStandardMaterial color="#fff1df" /></mesh>
+        <mesh position={[0.19, 1.32, 0.155]}><sphereGeometry args={[0.035, 10, 8]} /><meshStandardMaterial color="#b7d4a4" emissive="#7c9e66" emissiveIntensity={0.5} /></mesh>
+        <Html position={[0, 1.6, 0]} center><span style={{fontSize:10,whiteSpace:"nowrap",background:"#fff8e9",padding:"3px 7px",borderRadius:8,pointerEvents:"none"}}>Coffee station</span></Html>
+      </group>
       <Box
         position={[-4.15, 0.54, 1.8]}
         size={[1.02, 0.6, 2.1]}
