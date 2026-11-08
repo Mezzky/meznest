@@ -47,6 +47,9 @@ export const team = [
 ] as const;
 export type Role = (typeof team)[number]["id"];
 export type Task = {
+  parentId?: string;
+  parallelIds?: string[];
+  reviewRounds?: number;
   projectId?: string;
   workspace?: string;
   id: string;

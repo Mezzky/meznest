@@ -235,13 +235,14 @@ export default function Home() {
   }
   const tasks = state?.tasks || [];
   const approvals = state?.approvals || [];
-  const running = tasks.find((t) => ["running", "waiting"].includes(t.status));
+  const running = tasks.find((t) => !t.parallelIds && ["running", "waiting"].includes(t.status));
   const active = running?.roles[running.stage];
+  const workingRoles = tasks.filter(t=>!t.parallelIds && t.status === "running").map(t=>t.roles[t.stage]);
   const member = team.find((t) => t.id === selected)!;
   const memberResult = [...tasks].reverse().find(t => t.history.some(h => h.role === selected));
   const memberTask = tasks.find(
     (t) =>
-      t.roles[t.stage] === selected &&
+      !t.parallelIds && t.roles[t.stage] === selected &&
       ["running", "waiting"].includes(t.status),
   );
   const connected = state?.connection.status === "connected";
@@ -310,7 +311,7 @@ export default function Home() {
                   <small>{m.role}</small>
                 </span>
                 <span
-                  className={`presence ${active === m.id ? "working" : ""}`}
+                  className={`presence ${workingRoles.includes(m.id) ? "working" : ""}`}
                 />
               </button>
             ))}
@@ -466,6 +467,7 @@ export default function Home() {
                         selected={selected}
                         onSelect={setSelected}
                         active={active}
+                          workingRoles={workingRoles}
                         showLabels={showLabels}
                         resetKey={resetKey}
                       />

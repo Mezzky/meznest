@@ -10,9 +10,11 @@ import {
   type RefObject,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { RoundedBox, OrbitControls, Html } from "@react-three/drei";
+import { RoundedBox, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { team, type Role } from "@/lib/team";
+import { BossController, ExecutiveSuite, TourCamera } from "./BossTour";
+import { BOSS_SPAWN } from "@/lib/office-navigation.mjs";
 
 type V3 = [number, number, number];
 const deskPositions: V3[] = [
@@ -33,7 +35,12 @@ function LabelPositions({
     deskPositions.forEach(([x, , z], i) => {
       const el = elements.current[i];
       if (!el) return;
-      const actor = scene.getObjectByName(`worker-${i}`); if (actor) { actor.getWorldPosition(point); point.y += 1.6; } else point.set(x, 1.67, z + 0.35); point.project(camera);
+      const actor = scene.getObjectByName(`worker-${i}`);
+      if (actor) {
+        actor.getWorldPosition(point);
+        point.y += 1.6;
+      } else point.set(x, 1.67, z + 0.35);
+      point.project(camera);
       el.style.left = ((point.x + 1) * size.width) / 2 + "px";
       el.style.top = ((-point.y + 1) * size.height) / 2 + "px";
       el.style.visibility = point.z > 1 ? "hidden" : "visible";
@@ -41,15 +48,28 @@ function LabelPositions({
   });
   return null;
 }
-function FitCamera() {
-  const { camera, size } = useThree();
-  useEffect(() => {
-    const c = camera as THREE.OrthographicCamera;
-    c.zoom = Math.min(size.width / 14, size.height / 10);
-    c.updateProjectionMatrix();
-  }, [camera, size.width, size.height]);
-  return null;
+// Scene-native labels avoid nested React DOM roots during canvas updates.
+function SceneCaption({ text, position, width = 1.1 }: { text: string; position: V3; width?: number }) {
+  const texture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 512; canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#fff8e9";
+    ctx.beginPath(); ctx.roundRect(0, 0, 512, 128, 40); ctx.fill();
+    ctx.fillStyle = "#646658";
+    ctx.font = "40px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(text, 256, 64);
+    const map = new THREE.CanvasTexture(canvas);
+    map.colorSpace = THREE.SRGBColorSpace;
+    return map;
+  }, [text]);
+  useEffect(() => () => texture.dispose(), [texture]);
+  return <sprite position={position} scale={[width, width / 4, 1]}>
+    <spriteMaterial map={texture} transparent depthWrite={false} />
+  </sprite>;
 }
+
 function WallSign() {
   const texture = useMemo(() => {
     const canvas = document.createElement("canvas");
@@ -131,12 +151,21 @@ function Plant({ position, scale = 1 }: { position: V3; scale?: number }) {
 }
 function Limb({ start, end, color }: { start: V3; end: V3; color: string }) {
   const direction = new THREE.Vector3(...end).sub(new THREE.Vector3(...start));
-  const midpoint = new THREE.Vector3(...start).add(new THREE.Vector3(...end)).multiplyScalar(0.5);
-  const rotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
-  return <mesh position={midpoint} quaternion={rotation} castShadow>
-    <capsuleGeometry args={[0.07, Math.max(0.01, direction.length() - 0.1), 4, 8]} />
-    <meshStandardMaterial color={color} roughness={0.85} />
-  </mesh>;
+  const midpoint = new THREE.Vector3(...start)
+    .add(new THREE.Vector3(...end))
+    .multiplyScalar(0.5);
+  const rotation = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    direction.clone().normalize(),
+  );
+  return (
+    <mesh position={midpoint} quaternion={rotation} castShadow>
+      <capsuleGeometry
+        args={[0.07, Math.max(0.01, direction.length() - 0.1), 4, 8]}
+      />
+      <meshStandardMaterial color={color} roughness={0.85} />
+    </mesh>
+  );
 }
 function Avatar({
   color,
@@ -162,20 +191,30 @@ function Avatar({
       leg.rotation.x = THREE.MathUtils.lerp(leg.rotation.x, hip, blend);
       const knee = leg.children.find((child) => child.name === "knee");
       if (knee) {
-        const bend = active ? Math.PI / 2 : walking ? Math.max(0, -Math.cos(phase)) * 0.65 : 0;
+        const bend = active
+          ? Math.PI / 2
+          : walking
+            ? Math.max(0, -Math.cos(phase)) * 0.65
+            : 0;
         knee.rotation.x = THREE.MathUtils.lerp(knee.rotation.x, bend, blend);
       }
     });
     hand.current?.children.forEach((arm, i) => {
-      const swing = holdingCoffee && i === 1 ? Math.sin(clock.elapsedTime * 1.8) * 0.06 : walking && !active ? -Math.sin(clock.elapsedTime * 5 + i * Math.PI) * 0.28 : 0;
+      const swing =
+        holdingCoffee && i === 1
+          ? Math.sin(clock.elapsedTime * 1.8) * 0.06
+          : walking && !active
+            ? -Math.sin(clock.elapsedTime * 5 + i * Math.PI) * 0.28
+            : 0;
       arm.rotation.x = THREE.MathUtils.lerp(arm.rotation.x, swing, blend);
-      arm.position.y = active ? 0.74 + Math.sin(clock.elapsedTime * 9 + i * Math.PI) * 0.008 : 0.74;
+      arm.position.y = active
+        ? 0.74 + Math.sin(clock.elapsedTime * 9 + i * Math.PI) * 0.008
+        : 0.74;
     });
     if (head.current)
       head.current.rotation.z =
         Math.sin(clock.elapsedTime * 1.3 + variant) * 0.025;
-    if (hand.current)
-      hand.current.rotation.x = 0;
+    if (hand.current) hand.current.rotation.x = 0;
   });
   return (
     <group>
@@ -252,48 +291,96 @@ function Avatar({
         {[-0.28, 0.28].map((x) => {
           const shoulder: V3 = [x, 0, 0];
           const drinking = holdingCoffee && x > 0;
-          const elbow: V3 = drinking ? [0.3, -0.18, 0.15] : active ? [x * 0.8, -0.025, 0.31] : [x, -0.19, 0];
-          const wrist: V3 = drinking ? [0.02, -0.12, 0.3] : active ? [x * 0.5 - 0.08, -0.025, 0.59] : [x, -0.34, 0];
-          return <group key={x} position={[0, 0.74, 0]}>
-            <Limb start={shoulder} end={elbow} color={color} />
-            <mesh position={elbow}><sphereGeometry args={[0.075, 10, 8]} /><meshStandardMaterial color={color} /></mesh>
-            <Limb start={elbow} end={wrist} color={color} />
-            <Box position={[wrist[0], wrist[1], wrist[2] + (active ? 0.055 : 0)]} size={[0.14, active ? 0.075 : 0.14, 0.16]} color="#ebbd95" radius={0.04} />
-            {holdingCoffee && x > 0 && <group position={[wrist[0] + 0.11, wrist[1] + 0.025, wrist[2]]}>
-              <mesh castShadow><cylinderGeometry args={[0.075, 0.065, 0.16, 12]} /><meshStandardMaterial color="#fff1df" /></mesh>
-              <mesh position={[0, 0.082, 0]}><cylinderGeometry args={[0.062, 0.062, 0.008, 12]} /><meshStandardMaterial color="#664936" /></mesh>
-              <mesh position={[-0.08, 0, 0]}><torusGeometry args={[0.045, 0.013, 6, 12]} /><meshStandardMaterial color="#fff1df" /></mesh>
-            </group>}
-          </group>;
+          const elbow: V3 = drinking
+            ? [0.3, -0.18, 0.15]
+            : active
+              ? [x * 0.8, -0.025, 0.31]
+              : [x, -0.19, 0];
+          const wrist: V3 = drinking
+            ? [0.02, -0.12, 0.3]
+            : active
+              ? [x * 0.5 - 0.08, -0.025, 0.59]
+              : [x, -0.34, 0];
+          return (
+            <group key={x} position={[0, 0.74, 0]}>
+              <Limb start={shoulder} end={elbow} color={color} />
+              <mesh position={elbow}>
+                <sphereGeometry args={[0.075, 10, 8]} />
+                <meshStandardMaterial color={color} />
+              </mesh>
+              <Limb start={elbow} end={wrist} color={color} />
+              <Box
+                position={[wrist[0], wrist[1], wrist[2] + (active ? 0.055 : 0)]}
+                size={[0.14, active ? 0.075 : 0.14, 0.16]}
+                color="#ebbd95"
+                radius={0.04}
+              />
+              {holdingCoffee && x > 0 && (
+                <group position={[wrist[0] + 0.11, wrist[1] + 0.025, wrist[2]]}>
+                  <mesh castShadow>
+                    <cylinderGeometry args={[0.075, 0.065, 0.16, 12]} />
+                    <meshStandardMaterial color="#fff1df" />
+                  </mesh>
+                  <mesh position={[0, 0.082, 0]}>
+                    <cylinderGeometry args={[0.062, 0.062, 0.008, 12]} />
+                    <meshStandardMaterial color="#664936" />
+                  </mesh>
+                  <mesh position={[-0.08, 0, 0]}>
+                    <torusGeometry args={[0.045, 0.013, 6, 12]} />
+                    <meshStandardMaterial color="#fff1df" />
+                  </mesh>
+                </group>
+              )}
+            </group>
+          );
         })}
       </group>
-      <group ref={legs}>{[-0.14, 0.14].map((x) => (
-        <group key={x} position={[x, 0.36, 0]}>
-          <Box
-            position={[0, -0.075, 0]}
-            size={[0.18, 0.17, 0.19]}
-            color="#605d59"
-          />
-          <group name="knee" position={[0, -0.15, 0]}>
-          <Box
-            position={[0, -0.075, 0]}
-            size={[0.16, 0.17, 0.17]}
-            color="#605d59"
-          />
-          <Box
-            position={[0, -0.16, 0.055]}
-            size={[0.2, 0.1, 0.29]}
-            color="#f2e9db"
-          />
+      <group ref={legs}>
+        {[-0.14, 0.14].map((x) => (
+          <group key={x} position={[x, 0.36, 0]}>
+            <Box
+              position={[0, -0.075, 0]}
+              size={[0.18, 0.17, 0.19]}
+              color="#605d59"
+            />
+            <group name="knee" position={[0, -0.15, 0]}>
+              <Box
+                position={[0, -0.075, 0]}
+                size={[0.16, 0.17, 0.17]}
+                color="#605d59"
+              />
+              <Box
+                position={[0, -0.16, 0.055]}
+                size={[0.2, 0.1, 0.29]}
+                color="#f2e9db"
+              />
+            </group>
           </group>
-        </group>
-      ))}</group>
+        ))}
+      </group>
     </group>
   );
 }
-function Worker({ index, active, color, onSelect }: { index: number; active: boolean; color: string; onSelect: () => void }) {
+function Worker({
+  index,
+  active,
+  color,
+  onSelect,
+}: {
+  index: number;
+  active: boolean;
+  color: string;
+  onSelect: () => void;
+}) {
   const actor = useRef<THREE.Group>(null);
-  const travel = useRef({ segment: 0, pause: index * 2, initialized: false, chatTime: 0, chatCooldown: 0, direction: 1 });
+  const travel = useRef({
+    segment: 0,
+    pause: index * 2,
+    initialized: false,
+    chatTime: 0,
+    chatCooldown: 0,
+    direction: 1,
+  });
   const [chatting, setChatting] = useState(false);
   const point = useMemo(() => new THREE.Vector3(), []);
   const otherPoint = useMemo(() => new THREE.Vector3(), []);
@@ -304,16 +391,25 @@ function Worker({ index, active, color, onSelect }: { index: number; active: boo
   // the open aisle in front. No diagonal shortcuts through desks or chairs.
   const route = useMemo(() => {
     const aisle = index < 3 ? -0.15 : 2.65;
-    return [[dx, 0, aisle], [0, 0, aisle], [0, 0, 2.65],
-      [3.5, 0, 2.65], [0, 0, 2.65], [0, 0, aisle], [dx, 0, aisle]] as V3[];
+    return [
+      [dx, 0, aisle],
+      [0, 0, aisle],
+      [0, 0, 2.65],
+      [3.5, 0, 2.65],
+      [0, 0, 2.65],
+      [0, 0, aisle],
+      [dx, 0, aisle],
+    ] as V3[];
   }, [dx, index]);
   useFrame(({ scene }, delta) => {
-    const g = actor.current; if (!g) return;
+    const g = actor.current;
+    if (!g) return;
     const state = travel.current;
     const dt = Math.min(delta, 0.05);
     state.chatCooldown = Math.max(0, state.chatCooldown - dt);
     if (active) {
-      g.position.set(0, 0.22, 0.62); g.rotation.y = Math.PI;
+      g.position.set(0, 0.22, 0.62);
+      g.rotation.y = Math.PI;
       state.initialized = false;
       if (walking) setWalking(false);
       if (chatting) setChatting(false);
@@ -321,34 +417,49 @@ function Worker({ index, active, color, onSelect }: { index: number; active: boo
     }
     if (!state.initialized) {
       g.position.set(route[0][0] - dx, 0, route[0][2] - dz);
-      state.segment = 0; state.pause = 3 + index * 2; state.initialized = true;
+      state.segment = 0;
+      state.pause = 3 + index * 2;
+      state.initialized = true;
     }
-    if (state.pause > 0) { state.pause -= dt; if (walking) setWalking(false); return; }
-    const nextSegment = (state.segment + state.direction + route.length) % route.length;
+    if (state.pause > 0) {
+      state.pause -= dt;
+      if (walking) setWalking(false);
+      return;
+    }
+    const nextSegment =
+      (state.segment + state.direction + route.length) % route.length;
     const target = route[nextSegment];
-    const x = target[0] - dx - g.position.x, z = target[2] - dz - g.position.z;
+    const x = target[0] - dx - g.position.x,
+      z = target[2] - dz - g.position.z;
     const distance = Math.hypot(x, z);
     if (distance < 0.015) {
       state.segment = nextSegment;
       state.pause = state.segment === 3 ? 4 : 0.4;
       if (state.segment === 3) g.rotation.y = Math.PI / 3;
-      if (activity !== (state.segment === 3 ? 3 : 0)) setActivity(state.segment === 3 ? 3 : 0);
+      if (activity !== (state.segment === 3 ? 3 : 0))
+        setActivity(state.segment === 3 ? 3 : 0);
       if (walking) setWalking(false);
       return;
     }
     const stride = Math.min(distance, dt * 0.38);
-    const nextX = g.position.x + x / distance * stride;
-    const nextZ = g.position.z + z / distance * stride;
+    const nextX = g.position.x + (x / distance) * stride;
+    const nextZ = g.position.z + (z / distance) * stride;
     g.parent!.localToWorld(point.set(nextX, 0, nextZ));
     let blocked = false;
     for (let i = 0; i < team.length; i++) {
       if (i === index) continue;
-      const other = scene.getObjectByName('worker-' + i);
+      const other = scene.getObjectByName("worker-" + i);
       if (other) {
         other.getWorldPosition(otherPoint);
-        const nextDistance = Math.hypot(point.x - otherPoint.x, point.z - otherPoint.z);
+        const nextDistance = Math.hypot(
+          point.x - otherPoint.x,
+          point.z - otherPoint.z,
+        );
         g.getWorldPosition(point);
-        const oldDistance = Math.hypot(point.x - otherPoint.x, point.z - otherPoint.z);
+        const oldDistance = Math.hypot(
+          point.x - otherPoint.x,
+          point.z - otherPoint.z,
+        );
         g.parent!.localToWorld(point.set(nextX, 0, nextZ));
         if (nextDistance < 0.8 && nextDistance < oldDistance) blocked = true;
       }
@@ -364,20 +475,74 @@ function Worker({ index, active, color, onSelect }: { index: number; active: boo
       state.chatCooldown = 20;
     }
     if (walking !== !blocked) setWalking(!blocked);
-    if (!blocked) { g.position.set(nextX, 0, nextZ); }
+    if (!blocked) {
+      g.position.set(nextX, 0, nextZ);
+    }
     const facing = Math.atan2(x, z);
-    g.rotation.y += Math.atan2(Math.sin(facing - g.rotation.y), Math.cos(facing - g.rotation.y)) * Math.min(1, dt * 5);
+    g.rotation.y +=
+      Math.atan2(
+        Math.sin(facing - g.rotation.y),
+        Math.cos(facing - g.rotation.y),
+      ) * Math.min(1, dt * 5);
   });
-  return <group ref={actor} name={`worker-${index}`} onClick={e => { e.stopPropagation(); onSelect(); }}><Avatar color={color} variant={index} active={active} walking={walking} holdingCoffee={!active && activity === 3} />
-    {!active && chatting && <Html position={[0, 1.65, 0]} center><span style={{background:"#fff8e9",padding:"5px 10px",borderRadius:12,whiteSpace:"nowrap",fontSize:11,pointerEvents:"none"}}>Coffee chat ···</span></Html>}
-    {!active && activity === 2 && <Box position={[0, 0.65, 0.4]} size={[0.36, 0.06, 0.27]} color="#ae8ba8" rotation={[-0.3, 0, 0]} />}
-    {!active && activity === 1 && <group position={[0.28, 0.6, 0.35]} rotation={[0, 0, -0.4]}><Box size={[0.2, 0.2, 0.2]} color="#91b9ad" /><Box position={[0.16, 0.05, 0]} size={[0.22, 0.05, 0.05]} color="#91b9ad" /></group>}
-    </group>;
+  return (
+    <group
+      ref={actor}
+      name={`worker-${index}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect();
+      }}
+    >
+      <Avatar
+        color={color}
+        variant={index}
+        active={active}
+        walking={walking}
+        holdingCoffee={!active && activity === 3}
+      />
+      {!active && chatting && (
+        <SceneCaption position={[0, 1.65, 0]} text="Coffee chat ···" />
+      )}
+      {!active && activity === 2 && (
+        <Box
+          position={[0, 0.65, 0.4]}
+          size={[0.36, 0.06, 0.27]}
+          color="#ae8ba8"
+          rotation={[-0.3, 0, 0]}
+        />
+      )}
+      {!active && activity === 1 && (
+        <group position={[0.28, 0.6, 0.35]} rotation={[0, 0, -0.4]}>
+          <Box size={[0.2, 0.2, 0.2]} color="#91b9ad" />
+          <Box
+            position={[0.16, 0.05, 0]}
+            size={[0.22, 0.05, 0.05]}
+            color="#91b9ad"
+          />
+        </group>
+      )}
+    </group>
+  );
 }
 function ScreenActivity({ active }: { active: boolean }) {
   const lines = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => { if (active) lines.current?.children.forEach((line, i) => { line.scale.x = 0.35 + ((clock.elapsedTime * 0.3 + i * 0.19) % 0.65); }); });
-  return <group ref={lines} visible={active} position={[0.1, 1.34, -0.374]}>{[0,1,2,3,4].map(i => <mesh key={i} position={[0, -i * 0.055, 0]}><planeGeometry args={[0.45, 0.018]} /><meshBasicMaterial color={i % 2 ? '#f9efd2' : '#426c58'} /></mesh>)}</group>;
+  useFrame(({ clock }) => {
+    if (active)
+      lines.current?.children.forEach((line, i) => {
+        line.scale.x = 0.35 + ((clock.elapsedTime * 0.3 + i * 0.19) % 0.65);
+      });
+  });
+  return (
+    <group ref={lines} visible={active} position={[0.1, 1.34, -0.374]}>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <mesh key={i} position={[0, -i * 0.055, 0]}>
+          <planeGeometry args={[0.45, 0.018]} />
+          <meshBasicMaterial color={i % 2 ? "#f9efd2" : "#426c58"} />
+        </mesh>
+      ))}
+    </group>
+  );
 }
 function Desk({
   position,
@@ -471,7 +636,12 @@ function Desk({
         size={[0.08, 0.34, 0.08]}
         color="#b8b2a9"
       />
-      <Worker index={index} active={active} color={member.color} onSelect={onSelect} />
+      <Worker
+        index={index}
+        active={active}
+        color={member.color}
+        onSelect={onSelect}
+      />
       <ScreenActivity active={active} />
       {selected && (
         <mesh position={[0, 0.025, 0.6]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -487,11 +657,15 @@ function Room({
   onSelect,
   active,
   showLabels,
+  bossPresent,
+  workingRoles,
 }: {
   selected: Role;
   onSelect: (id: Role) => void;
   active?: Role;
   showLabels: boolean;
+  bossPresent: boolean;
+  workingRoles: Role[];
 }) {
   const positions: V3[] = [
     [-2.65, 0, -1.65],
@@ -607,7 +781,7 @@ function Room({
           member={team[i]}
           index={i}
           selected={selected === team[i].id}
-          active={active === team[i].id}
+          active={bossPresent || workingRoles.includes(team[i].id) || active === team[i].id}
           onSelect={() => onSelect(team[i].id)}
           showLabels={showLabels}
         />
@@ -617,13 +791,39 @@ function Room({
       <group position={[4.28, 0, 3.12]} rotation={[0, -Math.PI / 2, 0]}>
         <Box position={[0, 0.38, 0]} size={[0.85, 0.76, 0.7]} color="#d8bd99" />
         <Box position={[0, 0.79, 0]} size={[0.95, 0.08, 0.8]} color="#f2e7d6" />
-        <Box position={[0, 1.13, -0.08]} size={[0.62, 0.62, 0.45]} color="#5e7168" />
-        <Box position={[0, 1.15, 0.16]} size={[0.43, 0.32, 0.04]} color="#333f39" />
-        <Box position={[0, 1.18, 0.22]} size={[0.1, 0.07, 0.14]} color="#c6c8bd" />
-        <Box position={[0, 0.87, 0.18]} size={[0.5, 0.035, 0.32]} color="#424e46" />
-        <mesh position={[0, 0.97, 0.22]}><cylinderGeometry args={[0.075, 0.065, 0.16, 12]} /><meshStandardMaterial color="#fff1df" /></mesh>
-        <mesh position={[0.19, 1.32, 0.155]}><sphereGeometry args={[0.035, 10, 8]} /><meshStandardMaterial color="#b7d4a4" emissive="#7c9e66" emissiveIntensity={0.5} /></mesh>
-        <Html position={[0, 1.6, 0]} center><span style={{fontSize:10,whiteSpace:"nowrap",background:"#fff8e9",padding:"3px 7px",borderRadius:8,pointerEvents:"none"}}>Coffee station</span></Html>
+        <Box
+          position={[0, 1.13, -0.08]}
+          size={[0.62, 0.62, 0.45]}
+          color="#5e7168"
+        />
+        <Box
+          position={[0, 1.15, 0.16]}
+          size={[0.43, 0.32, 0.04]}
+          color="#333f39"
+        />
+        <Box
+          position={[0, 1.18, 0.22]}
+          size={[0.1, 0.07, 0.14]}
+          color="#c6c8bd"
+        />
+        <Box
+          position={[0, 0.87, 0.18]}
+          size={[0.5, 0.035, 0.32]}
+          color="#424e46"
+        />
+        <mesh position={[0, 0.97, 0.22]}>
+          <cylinderGeometry args={[0.075, 0.065, 0.16, 12]} />
+          <meshStandardMaterial color="#fff1df" />
+        </mesh>
+        <mesh position={[0.19, 1.32, 0.155]}>
+          <sphereGeometry args={[0.035, 10, 8]} />
+          <meshStandardMaterial
+            color="#b7d4a4"
+            emissive="#7c9e66"
+            emissiveIntensity={0.5}
+          />
+        </mesh>
+        <SceneCaption position={[0, 1.6, 0]} text="Coffee station" />
       </group>
       <Box
         position={[-4.15, 0.54, 1.8]}
@@ -652,20 +852,6 @@ function Room({
         color="#8b9e87"
         radius={0.07}
         rotation={[0, 0, -0.3]}
-      />
-      <mesh position={[-2.8, 0.45, 3.03]} castShadow>
-        <cylinderGeometry args={[0.53, 0.53, 0.09, 32]} />
-        <meshStandardMaterial color="#c9a17b" />
-      </mesh>
-      <Box
-        position={[-2.8, 0.23, 3.03]}
-        size={[0.08, 0.42, 0.08]}
-        color="#b79170"
-      />
-      <Box
-        position={[-2.8, 0.52, 3.03]}
-        size={[0.38, 0.045, 0.26]}
-        color="#9aab96"
       />
       <Box
         position={[4.25, 0.58, 0.9]}
@@ -720,12 +906,14 @@ class SceneBoundary extends Component<
   }
 }
 export default function Office({
+  workingRoles = [],
   selected,
   onSelect,
   active,
   showLabels,
   resetKey,
 }: {
+  workingRoles?: Role[];
   selected: Role;
   onSelect: (id: Role) => void;
   active?: Role;
@@ -733,12 +921,111 @@ export default function Office({
   resetKey: number;
 }) {
   const labelRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const keys = useRef(new Set<string>());
+  const bossPosition = useRef({ ...BOSS_SPAWN });
+  const [walking, setWalking] = useState(false);
+  const [room, setRoom] = useState("CEO suite");
+  const [near, setNear] = useState<number | null>(null);
+  const [seated, setSeated] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const musicIntent = useRef(false);
+  const [musicPlaying, setMusicPlaying] = useState(false);
+  const [musicError, setMusicError] = useState("");
+  const [nearMusic, setNearMusic] = useState(false);
+  const toggleMusic = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    setMusicError("");
+    musicIntent.current = !musicIntent.current;
+    if (!musicIntent.current) { audio.pause(); return; }
+    audio.volume = 0.18;
+    void audio.play().then(() => { if (!musicIntent.current) audio.pause(); }).catch(() => {
+      musicIntent.current = false;
+      setMusicPlaying(false);
+      setMusicError("Music could not play. Press E to try again.");
+    });
+  };
+  const [nearChair, setNearChair] = useState(false);
+  useEffect(() => { setSeated(false); keys.current.clear(); }, [resetKey]);
+  const standPosition = useRef({ ...BOSS_SPAWN });
+  const interact = () => {
+    keys.current.clear();
+    if (seated) {
+      bossPosition.current = { ...standPosition.current };
+      setSeated(false);
+    } else if (nearMusic) {
+      toggleMusic();
+    } else if (nearChair) {
+      standPosition.current = { ...bossPosition.current };
+      bossPosition.current = { x: 2.22, z: 8.05 };
+      setSeated(true);
+    } else if (near !== null) onSelect(team[near].id);
+    stageRef.current?.focus({ preventScroll: true });
+  };
+  const [homeKey, setHomeKey] = useState(0);
+  useEffect(() => {
+    const clear = () => keys.current.clear();
+    const up = (e: KeyboardEvent) => keys.current.delete(e.code);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", clear);
+    document.addEventListener("visibilitychange", clear);
+    return () => {
+      clear();
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", clear);
+      document.removeEventListener("visibilitychange", clear);
+    };
+  }, []);
+  useEffect(() => {
+    keys.current.clear();
+    if (walking) stageRef.current?.focus({ preventScroll: true });
+  }, [walking]);
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
   if (!ready) return <div className="scene-fallback">Opening the studio…</div>;
   return (
     <SceneBoundary>
-      <div style={{ height: "100%", position: "relative" }}>
+      <div
+        ref={stageRef}
+        className={`office-play-area ${walking ? "is-walking" : ""}`}
+        tabIndex={0}
+        role="region"
+        aria-label="Interactive office. Choose Walk as boss to move with W A S D. Escape returns to overview."
+        style={{ height: "100%", position: "relative" }}
+        onPointerDown={(e) => {
+          if (walking && e.target instanceof HTMLCanvasElement)
+            stageRef.current?.focus({ preventScroll: true });
+        }}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+            keys.current.clear();
+        }}
+        onKeyDown={(e) => {
+          if (
+            !walking ||
+            e.target instanceof HTMLInputElement ||
+            e.target instanceof HTMLTextAreaElement ||
+            e.target instanceof HTMLSelectElement ||
+            (e.target as HTMLElement).isContentEditable ||
+            document.querySelector("dialog[open]")
+          )
+            return;
+          if (["KeyW", "KeyA", "KeyS", "KeyD"].includes(e.code)) {
+            e.preventDefault();
+            keys.current.add(e.code);
+          }
+          if (e.code === "Escape") {
+            e.preventDefault();
+            setWalking(false);
+          }
+          if (e.code === "KeyE" && !e.repeat) {
+            e.preventDefault();
+            interact();
+          }
+        }}
+      >
+        <audio ref={audioRef} src="/audio/dream-culture.mp3" loop preload="none" onPlay={() => setMusicPlaying(true)} onPause={() => setMusicPlaying(false)} onError={() => { musicIntent.current = false; setMusicPlaying(false); setMusicError("Music could not load. Try again."); }} />
         <Canvas
           key={resetKey}
           shadows
@@ -749,7 +1036,11 @@ export default function Office({
           gl={{ antialias: true, alpha: true }}
         >
           <LabelPositions elements={labelRefs} />
-          <FitCamera />
+          <TourCamera
+            walking={walking}
+            position={bossPosition}
+            reset={homeKey + resetKey}
+          />
           <ambientLight intensity={1.4} />
           <hemisphereLight args={["#fff7df", "#d1c5b3", 1.2]} />
           <directionalLight
@@ -769,13 +1060,28 @@ export default function Office({
               onSelect={onSelect}
               active={active}
               showLabels={showLabels}
+              bossPresent={room === "Team studio"}
+              workingRoles={workingRoles}
+            />
+            <ExecutiveSuite position={bossPosition} musicPlaying={musicPlaying} />
+            <BossController
+              walking={walking}
+              keys={keys}
+              position={bossPosition}
+              onRoom={setRoom}
+              onNear={setNear}
+              onNearChair={setNearChair}
+              onNearMusic={setNearMusic}
+              seated={seated}
+              reset={homeKey + resetKey}
+              follow={true}
             />
           </Suspense>
           <OrbitControls
             makeDefault
             target={[0, 0.3, 0]}
             enablePan={false}
-            minZoom={18}
+            minZoom={10}
             maxZoom={85}
             minPolarAngle={0.35}
             maxPolarAngle={Math.PI / 2.4}
@@ -783,6 +1089,91 @@ export default function Office({
             maxAzimuthAngle={Math.PI / 2.1}
           />
         </Canvas>
+        <div className="boss-toolbar">
+          <button
+            className={!walking ? "active" : ""}
+            onClick={() => setWalking(false)}
+          >
+            Overview
+          </button>
+          <button
+            className={walking ? "active" : ""}
+            onClick={() => setWalking(true)}
+          >
+            Walk as boss <span>WASD</span>
+          </button>
+        </div>
+        {walking && (
+          <>
+            <div className="boss-location">
+              <span /> YOU · MEZZKY <strong>{room}</strong>
+              <button
+                aria-label="Return boss to CEO suite"
+                onClick={() => {
+                  keys.current.clear();
+                  setSeated(false);
+                  setHomeKey((k) => k + 1);
+                  stageRef.current?.focus({ preventScroll: true });
+                }}
+              >
+                ⌂
+              </button>
+            </div>
+            <div className="boss-instructions">
+              <span>
+                <kbd>W</kbd>
+                <kbd>A</kbd>
+                <kbd>S</kbd>
+                <kbd>D</kbd> Walk · <kbd>Esc</kbd> Overview
+              </span>
+              {nearMusic && !seated ? (
+                <button onClick={interact}><kbd>E</kbd> {musicPlaying ? "Pause" : "Play"} jukebox</button>
+              ) : seated || nearChair ? (
+                <button onClick={interact}><kbd>E</kbd> {seated ? "Stand up" : "Sit in your chair"}</button>
+              ) : near !== null ? (
+                <button onClick={() => onSelect(team[near].id)}>
+                  <kbd>E</kbd> Inspect {team[near].name} ·{" "}
+                  {workingRoles.includes(team[near].id) ? "Working" : "Idle"}
+                </button>
+              ) : (
+                <small>Approach your chair to sit, or a teammate to inspect their work.</small>
+              )}
+            </div>
+            {musicError && <span role="alert" style={{position:"absolute",bottom:110,left:14,zIndex:22}}>{musicError}</span>}
+            <div className="boss-dpad" aria-label="Walking controls">
+              {[
+                ["KeyW", "↑", "Walk forward"],
+                ["KeyA", "←", "Walk left"],
+                ["KeyS", "↓", "Walk backward"],
+                ["KeyD", "→", "Walk right"],
+              ].map(([code, arrow, label]) => (
+                <button
+                  key={code}
+                  aria-label={label}
+                  className={code === "KeyW" ? "forward" : ""}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    keys.current.add(code);
+                  }}
+                  onPointerUp={() => keys.current.delete(code)}
+                  onPointerCancel={() => keys.current.delete(code)}
+                  onLostPointerCapture={() => keys.current.delete(code)}
+                  onKeyDown={(e) => {
+                    if (e.code === "Space" || e.code === "Enter") {
+                      e.preventDefault();
+                      keys.current.add(code);
+                    }
+                  }}
+                  onKeyUp={() => keys.current.delete(code)}
+                  onBlur={() => keys.current.delete(code)}
+                >
+                  {arrow}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
         {showLabels &&
           team.map((m, i) => (
             <button
@@ -799,10 +1190,10 @@ export default function Office({
               onClick={() => onSelect(m.id)}
             >
               <span
-                style={{ background: active === m.id ? "#70a38a" : m.color }}
+                style={{ background: workingRoles.includes(m.id) ? "#70a38a" : m.color }}
               />
               {m.name}
-              {active === m.id && <i>working</i>}
+              {(workingRoles.includes(m.id) || active === m.id) && <i>working</i>}
             </button>
           ))}
       </div>
