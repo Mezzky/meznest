@@ -47,6 +47,10 @@ export const team = [
 ] as const;
 export type Role = (typeof team)[number]["id"];
 export type Task = {
+  exportWarning?: string;
+  sessions?: {role: Role; threadId: string; model: string}[];
+  artifacts?: {name: string; file: string}[];
+  stitch?: {projectId: string; screenId: string};
   parentId?: string;
   parallelIds?: string[];
   reviewRounds?: number;
@@ -70,7 +74,7 @@ export type Task = {
   error?: string;
   threadId?: string;
   turnId?: string;
-  history: { role: Role; text: string }[];
+  history: { role: Role; text: string; threadId?: string }[];
 };
 export type Approval = {
   id: string;
@@ -85,6 +89,10 @@ export type Approval = {
   }[];
 };
 export type OfficeState = {
+  stitch?: {status: string; models: {model: string; displayName: string}[]};
+  models?: { id: string; model: string; displayName: string; isDefault?: boolean }[];
+  modelError?: string;
+  workers?: Partial<Record<Role, { provider: string; model: string }>>;
   tasks: Task[];
   approvals: Approval[];
   events: { id: string; text: string; time: string; role?: Role }[];

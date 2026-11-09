@@ -176,3 +176,40 @@ test("projects retain task folders and redo preserves project history", (t) => {
   assert.notEqual(redo.id, first.id);
   assert.equal(engine.state.tasks.length, 3);
 });
+
+test("worker model selection validates the catalog and reaches Codex", async (t) => {
+  const { engine } = fixture(t);
+  const requests = fakeConnection(engine);
+  engine.models = [{ id: "test", model: "test-model", displayName: "Test" }];
+  assert.throws(() => engine.workerSettings({role:"frontend",provider:"codex",model:"unavailable"}));
+  assert.throws(() => engine.workerSettings({role:"frontend",provider:"claude",model:"test-model"}));
+  engine.workerSettings({role:"frontend",provider:"codex",model:"test-model"});
+  engine.add({brief:"Build a page",roles:["frontend"]});
+  await tick();
+  assert.equal(requests.find(r=>r.method==="thread/start").params.model,"test-model");
+});
+
+test("follow-up work resumes the same project and worker conversation", async t => {
+ const {engine}=fixture(t);const requests=fakeConnection(engine);
+ const first=engine.add({brief:"First",roles:["frontend"]});await tick();
+ const threadId=first.threadId;
+ engine.message({method:"turn/completed",params:{threadId,turn:{status:"completed"}}});await tick();
+ const original=engine.request;engine.request=async(method,params)=>method==="thread/resume"?(requests.push({method,params}),{thread:{id:params.threadId}}):original(method,params);
+ const next=engine.add({brief:"Continue",roles:["frontend"]});await tick();
+ assert.equal(next.threadId,threadId);assert.equal(requests.filter(r=>r.method==="thread/start").length,1);
+ assert.equal(next.sessions[0].threadId,threadId);
+});
+test("Stitch design writes a real handoff without invoking Codex",async t=>{
+ const {engine}=fixture(t);const requests=fakeConnection(engine);
+ engine.stitch={status:"connected",models:[],snapshot:()=>({status:"connected",models:[]}),generate:async(project,task)=>{task.artifacts=[{name:"screen.html",file:"test-only"}];return "Design exported";}};
+ engine.workerSettings({role:"design",provider:"stitch",model:""});
+ const task=engine.add({brief:"Design",roles:["design"]});await tick();
+ assert.equal(task.status,"done");assert.equal(task.history[0].provider,"stitch");assert.equal(requests.length,0);
+});
+test("Stitch errors fail the task without a fabricated handoff",async t=>{
+ const {engine}=fixture(t);fakeConnection(engine);
+ engine.stitch={status:"connected",models:[],generate:async()=>{throw new Error("Design generation failed");}};
+ engine.workerSettings({role:"design",provider:"stitch",model:""});
+ const task=engine.add({brief:"Design",roles:["design"]});await tick();
+ assert.equal(task.status,"failed");assert.equal(task.history.length,0);assert.match(task.error,/generation failed/);
+});

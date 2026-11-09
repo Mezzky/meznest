@@ -89,3 +89,11 @@ Each engineer receives a source copy under `.meznest/runs/`. Installed dependenc
 Review produces structured findings assigned to frontend or backend. The assigned engineer receives the full review handoff, fixes it, and returns to review automatically. Review checks the combined project; after three unsuccessful review rounds the task pauses for attention. A missing or invalid review verdict also pauses rather than reporting success. Single-owner fixes run sequentially; paired frontend/backend fixes run concurrently when adjacent in the workflow.
 
 Pause interrupts all running engineers. Restarted work remains paused until retried. These changes are covered by simulated protocol and file-integration tests; a real signed-in project run is still needed to validate model behavior end to end.
+
+## November 9 — service connections
+
+Team now supports Codex account model selection and a Google Stitch connection for Sukijem. Stitch keys remain in server memory only (or can be supplied using STITCH_API_KEY); they are never saved in office.json. Create a key in Stitch Settings and enter it in Team. Claude is postponed.
+
+Codex sessions are retained by project, role, and selected model; parallel engineering copies use separate threads. Task details offer conversation reads and Codex deep links. Automatic desktop-sidebar visibility has not been verified. Stitch keeps a remote project/screen, edits it on subsequent work, exports HTML/images under design/stitch/<task-id>, and supplies those file paths to the next role. Stitch generation cannot currently be interrupted. Model lists come from the connected provider; advertised Stitch models do not establish free-tier entitlement.
+
+Validated: TypeScript, production build, 21 automated tests, and live Codex account/model discovery in the UI. Stitch authentication and real generation remain unverified until the user supplies a key. Build reports dynamic-filesystem tracing warnings in the existing collaboration engine.

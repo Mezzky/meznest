@@ -152,6 +152,8 @@ function Modal({
 }
 export default function Home() {
   const [state, setState] = useState<OfficeState | null>(null);
+  const [stitchSetup, setStitchSetup] = useState(false);
+  const [conversation, setConversation] = useState<{id:string;status:string;messages:{role:string;text:string}[]}[] | null>(null);
   const [projectHistory, setProjectHistory] = useState<string | null>(null);
   const [addingProject, setAddingProject] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
@@ -167,16 +169,19 @@ export default function Home() {
   const [resetKey, setResetKey] = useState(0);
   const [filter, setFilter] = useState("All tasks");
   const [sidebar, setSidebar] = useState(false);
-  const [celebrating, setCelebrating] = useState(false);
+  const [celebrations, setCelebrations] = useState<Partial<Record<Role, number>>>({});
   const completedRef = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (!state) return;
-    const done = new Set(state.tasks.filter(t => t.status === "done").map(t => t.id));
-    const fresh = completedRef.current && [...done].some(id => !completedRef.current!.has(id));
+    const entries = state.tasks.flatMap(t => t.history.map((h,i) => ({key:h.threadId ? h.threadId+':'+h.role+':'+h.text : t.id+':'+i,role:h.role, inherited:(!!t.parentId && !t.roles.includes(h.role)) || (h.role==='lead' && h.text.startsWith('Integrated engineering'))})));
+    const done = new Set(entries.map(h=>h.key));
+    if (completedRef.current) {
+      const fresh = entries.filter(h=>!h.inherited && !completedRef.current!.has(h.key));
+      if (fresh.length) setCelebrations(previous=>({...previous,...Object.fromEntries(fresh.map(h=>[h.role,Date.now()+3500]))}));
+    }
     completedRef.current = done;
-    if (fresh) setCelebrating(true);
   }, [state]);
-  useEffect(() => { if (celebrating) { const timer = setTimeout(() => setCelebrating(false), 4000); return () => clearTimeout(timer); } }, [celebrating]);
+  useEffect(()=>{const timer=setInterval(()=>setCelebrations(previous=>{const next=Object.fromEntries(Object.entries(previous).filter(([,end])=>end!>Date.now()));return Object.keys(next).length===Object.keys(previous).length?previous:next;}),250);return()=>clearInterval(timer);},[]);
   const [singleTask, setSingleTask] = useState(false);
   function openTask(single = false) {
     setSingleTask(single);
@@ -463,7 +468,7 @@ export default function Home() {
                         <span>·</span>
                         {active ? "1 working" : "5 ready"}
                       </div>
-                      <Office
+                      <Office celebrations={celebrations}
                         selected={selected}
                         onSelect={setSelected}
                         active={active}
@@ -818,14 +823,29 @@ export default function Home() {
                 </section>
               </>
             )}
+            {tab === "Team" && <section className="connections-studio">
+              <div className="connections-title"><div><span className="eyebrow">THE TOOLS BEHIND THE TEAM</span><h2>A little extra intelligence.</h2><p>Connect your favorite tools. Give every teammate the right mind for the job.</p></div><span className="connection-count"><span/> {Number(connected)+Number(state?.stitch?.status === "connected")} connected</span></div>
+              <div className="service-grid"><article className="service-card codex-service"><div className="service-top"><span className="service-symbol"><Plug size={24}/></span><span className={'service-status '+(connected?'online':'')}>{connected?'Connected':'Ready to connect'}</span></div><h3>OpenAI Codex</h3><p>Your coding team, powered by your ChatGPT account.</p><div className="service-footer"><span>{connected ? 'ChatGPT '+(state?.connection.plan || '')+' · '+(state?.models?.length || 0)+' models' : 'Planning · Code · Review'}</span><button className="button outline" onClick={()=>setModal("settings")}>{connected?'Manage':'Connect'} <ArrowUpRight size={14}/></button></div></article>
+              <article className="service-card stitch-service"><div className="service-top"><span className="service-symbol"><Sparkles size={24}/></span><span className={'service-status '+(state?.stitch?.status === 'connected'?'online':'')}>{state?.stitch?.status === 'connected'?'Connected':'Made for design'}</span></div><h3>Google Stitch <span className="beta-tag">BETA</span></h3><p>Turn Sukijem’s ideas into screens worth building.</p><div className="service-footer"><span>UI design · Screens · Variations</span><button className="button primary" onClick={()=>setStitchSetup(true)}>{state?.stitch?.status === 'connected'?'Manage':'Connect'} <ArrowUpRight size={14}/></button></div></article></div>
+              <div className="team-section-heading"><div><span className="eyebrow">FIVE PERSONALITIES. YOUR CHOICE OF MODELS.</span><h2>Meet your makers.</h2></div><span>Changes apply to their next work session</span></div>
+            </section>}
             {tab === "Team" && (
               <div className="team-grid">
                 {team.map((m) => (
-                  <section className="panel team-tile" key={m.id}>
+                  <section className="panel team-tile" style={{borderTopColor:m.color}} key={m.id}>
                     <Avatar id={m.id} size="large" />
                     <h2>{m.name}</h2>
                     <span className="muted">{m.role}</span>
                     <p>{m.description}</p>
+                    <div className="worker-model-settings">
+                      <span className="project-chip">{state?.workers?.[m.id]?.provider === "stitch" ? "Google Stitch · " + (state?.stitch?.status || "disconnected") : connected ? "ChatGPT · " + (state?.connection.plan || "Connected") : "Not connected"}</span>
+                      <label>AI service<select aria-label={m.name + " AI service"} value={state?.workers?.[m.id]?.provider || "codex"} disabled={busy} onChange={e=>void act({action:"worker-settings",role:m.id,provider:e.target.value,model:""})}><option value="codex">OpenAI Codex</option>{m.id === "design" && <option value="stitch" disabled={state?.stitch?.status !== "connected"}>Google Stitch{state?.stitch?.status !== "connected" ? " — connect below" : ""}</option>}</select></label>
+                      <label>Model<select aria-label={m.name + " model"} disabled={busy || (state?.workers?.[m.id]?.provider === "stitch" ? state?.stitch?.status !== "connected" : !connected)} value={state?.workers?.[m.id]?.model || ""} onChange={e=>void act({action:"worker-settings",role:m.id,provider:state?.workers?.[m.id]?.provider || "codex",model:e.target.value})}><option value="">Account default</option>{(state?.workers?.[m.id]?.provider === "stitch" ? state?.stitch?.models : state?.models)?.map(model=><option key={model.model} value={model.model}>{model.displayName}</option>)}</select></label>
+                      <small>{state?.workers?.[m.id]?.provider === "stitch" ? "Models advertised by Stitch. Google checks account eligibility and quotas when generating." : "Models reported by your Codex account. Plan and usage limits apply."}</small>
+                      {state?.modelError && <small className="inline-error">{state.modelError}</small>}
+                      {state?.workers?.[m.id]?.provider !== "stitch" && <button className="button outline full" disabled={busy || !connected} onClick={()=>void act({action:"models"})}><RotateCcw size={14}/> Refresh available models</button>}
+                      {!connected && <button className="button primary full" onClick={()=>setModal("settings")}>Connect account <Plug size={14}/></button>}
+                    </div>
                     <div className="skill-tags">
                       {m.skills.map((s) => (
                         <span key={s}>{s}</span>
@@ -844,7 +864,6 @@ export default function Home() {
                 ))}
               </div>
             )}
-            {celebrating && <div className="celebration" role="status"><strong>Hooray! 🎉 Teamwork complete!</strong>{Array.from({length:32},(_,i)=><i key={i} style={{left:i*3.1+"%",animationDelay:(i%7)*0.1+"s",background:["#b77c5b","#7a9e91","#c7a45e","#ae8ba8"][i%4]}} />)}</div>}
             {tab === "Projects" && <div className="projects-hub">
               <header className="projects-heading"><div><span className="eyebrow">A HOME FOR EVERY IDEA</span><h2>Your projects</h2><p>Pick up where you left off. Every brief, handoff, and result stays with its project.</p></div><button className="button primary" onClick={()=>setAddingProject(true)}><Plus size={17}/> New project</button></header>
               <div className="projects-toolbar"><input aria-label="Search projects" placeholder="Find a project…" value={projectSearch} onChange={e=>setProjectSearch(e.target.value)}/><span>{state?.projects?.length || 0} local projects</span></div>
@@ -955,6 +974,11 @@ export default function Home() {
             close={() => setDetail(null)}
           >
             <div className="task-detail">
+              <div className="project-actions">{taskDetail.sessions?.map((session,i)=><span key={i}><a className="button outline" href={'codex://threads/'+encodeURIComponent(session.threadId)}>Open {team.find(m=>m.id===session.role)?.name} in Codex</a><button className="button outline" disabled={busy || !connected} onClick={async()=>{setBusy(true);try{const r=await fetch('/api/office',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'thread-history',id:taskDetail.id,threadId:session.threadId})});const data=await r.json();if(!r.ok)throw new Error(data.error);setConversation(data.turns);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}}>Read conversation</button></span>)}</div>
+              {taskDetail.sessions?.length ? <small>Desktop visibility depends on your Codex app. Saved handoffs remain below.</small> : null}
+              {taskDetail.stitch && <a className="button outline" href={'https://stitch.withgoogle.com/projects/'+encodeURIComponent(taskDetail.stitch.projectId)} target="_blank" rel="noreferrer">Open Stitch project</a>}
+              {taskDetail.exportWarning && <p className="connection-hint">Design created in Stitch. {taskDetail.exportWarning}</p>}
+              {taskDetail.artifacts?.map(a=><a key={a.name} className="button primary" href={'/api/office?task='+encodeURIComponent(taskDetail.id)+'&artifact='+encodeURIComponent(a.name)}>Download {a.name}</a>)}
               <h3>Result folder</h3><code>{taskDetail.workspace || state?.settings.workspace}</code><h3>The brief</h3>
               <p className="preserve">{taskDetail.brief}</p>
               <div className="handoff-chain">
@@ -1017,6 +1041,8 @@ export default function Home() {
             </div>
           </Modal>
         )}
+        {stitchSetup && <Modal title="A spark for your designer." subtitle="Connect Google Stitch to Sukijem’s workspace." close={()=>setStitchSetup(false)}><div className="stitch-setup-intro"><span className="service-symbol"><Sparkles size={25}/></span><div><strong>Google Stitch</strong><p>Designs land in your project folder, ready for Dono.</p></div></div><div className="setup-steps"><span><b>1</b> Sign in to <a href="https://stitch.withgoogle.com" target="_blank" rel="noreferrer">Google Stitch <ExternalLink size={12}/></a></span><span><b>2</b> Create an API key in Settings → API / MCP.</span><span><b>3</b> Connect below, then select Stitch for Sukijem.</span></div><form className="form" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget;const key=String(new FormData(form).get("key")||"");form.reset();await act({action:"stitch-connect",apiKey:key});}}><span className="project-chip">{state?.stitch?.status === "connected" ? "Stitch connected" : "Not connected"}</span><label>Stitch API key<input name="key" type="password" autoComplete="off" required placeholder="Enter API key"/></label><button className="button primary" disabled={busy}>Connect Stitch</button>{state?.stitch?.status === "connected" && <button type="button" className="button outline" disabled={busy} onClick={()=>void act({action:"stitch-disconnect"})}>Disconnect</button>}</form><p className="setup-privacy"><ShieldCheck size={14}/> Kept in server memory for this session. Reconnect after restarting Meznest.</p></Modal>}
+        {conversation && <Modal title="Codex conversation" subtitle="Messages read from the connected service" close={()=>setConversation(null)}>{conversation.length ? conversation.map(turn=><section key={turn.id}>{turn.messages.map((message,i)=><article key={i} className="history-entry"><strong>{message.role}</strong><p style={{maxHeight:'none'}}>{message.text}</p></article>)}</section>) : <p>No messages available for this conversation yet.</p>}</Modal>}
         {busy && (
           <div className="saving-indicator" role="status">
             <LoaderCircle size={15} className="spin" /> One moment…

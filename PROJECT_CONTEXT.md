@@ -284,3 +284,11 @@ Preserve the current Meznest identity and cozy low-poly design while continuing 
 - At the user's request, workers now use approvalPolicy never and danger-full-access. Earlier workspace-write/no-network descriptions below are historical.
 - Development uses Webpack to avoid the observed Turbopack reload loop. Windows Codex executable discovery is included.
 - Nine engine tests and TypeScript checks pass. Real single-role tasks completed locally; full five-role execution remains unverified. Old test output files were deleted at the user's request; their task history remains local.
+
+## November 9 — service connections
+
+Team now supports Codex account model selection and a Google Stitch connection for Sukijem. Stitch keys remain in server memory only (or can be supplied using STITCH_API_KEY); they are never saved in office.json. Create a key in Stitch Settings and enter it in Team. Claude is postponed.
+
+Codex sessions are retained by project, role, and selected model; parallel engineering copies use separate threads. Task details offer conversation reads and Codex deep links. Automatic desktop-sidebar visibility has not been verified. Stitch keeps a remote project/screen, edits it on subsequent work, exports HTML/images under design/stitch/<task-id>, and supplies those file paths to the next role. Stitch generation cannot currently be interrupted. Model lists come from the connected provider; advertised Stitch models do not establish free-tier entitlement.
+
+Validated: TypeScript, production build, 21 automated tests, and live Codex account/model discovery in the UI. Stitch authentication and real generation remain unverified until the user supplies a key. Build reports dynamic-filesystem tracing warnings in the existing collaboration engine.

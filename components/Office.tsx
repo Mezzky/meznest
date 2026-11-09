@@ -1,6 +1,8 @@
 "use client";
 import {
   Suspense,
+  createContext,
+  useContext,
   useRef,
   useState,
   useEffect,
@@ -16,6 +18,7 @@ import { team, type Role } from "@/lib/team";
 import { BossController, ExecutiveSuite, TourCamera } from "./BossTour";
 import { BOSS_SPAWN } from "@/lib/office-navigation.mjs";
 
+const CelebrationContext = createContext<Partial<Record<Role, number>>>({});
 type V3 = [number, number, number];
 const deskPositions: V3[] = [
   [-2.65, 0, -1.65],
@@ -167,18 +170,32 @@ function Limb({ start, end, color }: { start: V3; end: V3; color: string }) {
     </mesh>
   );
 }
+function HandSparks({position}: {position: V3}) {
+  const particles=useRef<THREE.Group>(null);
+  const elapsed=useRef(0);
+  useFrame((_,delta)=>{elapsed.current+=Math.min(delta,0.05);particles.current?.children.forEach((particle,i)=>{
+    const age=(elapsed.current+i*0.065)%1.15;
+    const angle=i*2.399;
+    particle.position.set(Math.cos(angle)*age*0.32,age*0.9-age*age*0.5,Math.sin(angle)*age*0.32);
+    particle.rotation.set(age*3,angle+age*4,age*5);
+    particle.scale.setScalar(Math.max(0,1-age/1.15));
+  });});
+  return <group position={position}><group ref={particles}>{Array.from({length:16},(_,i)=><mesh key={i}><boxGeometry args={i%3 ? [0.025,0.06,0.012] : [0.04,0.04,0.04]}/><meshBasicMaterial color={['#e3b759','#fff1ba','#93b6a2','#cf9476'][i%4]}/></mesh>)}</group></group>;
+}
 function Avatar({
   color,
   variant = 0,
   active = false,
   walking = false,
   holdingCoffee = false,
+  celebrating = false,
 }: {
   color: string;
   variant?: number;
   active?: boolean;
   walking?: boolean;
   holdingCoffee?: boolean;
+  celebrating?: boolean;
 }) {
   const legs = useRef<THREE.Group>(null);
   const head = useRef<THREE.Group>(null);
@@ -201,7 +218,7 @@ function Avatar({
     });
     hand.current?.children.forEach((arm, i) => {
       const swing =
-        holdingCoffee && i === 1
+        celebrating ? Math.sin(clock.elapsedTime * 10 + i) * 0.1 : holdingCoffee && i === 1
           ? Math.sin(clock.elapsedTime * 1.8) * 0.06
           : walking && !active
             ? -Math.sin(clock.elapsedTime * 5 + i * Math.PI) * 0.28
@@ -291,18 +308,19 @@ function Avatar({
         {[-0.28, 0.28].map((x) => {
           const shoulder: V3 = [x, 0, 0];
           const drinking = holdingCoffee && x > 0;
-          const elbow: V3 = drinking
+          const elbow: V3 = celebrating ? [x * 1.4, 0.2, 0] : drinking
             ? [0.3, -0.18, 0.15]
             : active
               ? [x * 0.8, -0.025, 0.31]
               : [x, -0.19, 0];
-          const wrist: V3 = drinking
+          const wrist: V3 = celebrating ? [x * 1.55, 0.48, 0] : drinking
             ? [0.02, -0.12, 0.3]
             : active
               ? [x * 0.5 - 0.08, -0.025, 0.59]
               : [x, -0.34, 0];
           return (
             <group key={x} position={[0, 0.74, 0]}>
+              {celebrating && <HandSparks position={wrist} />}
               <Limb start={shoulder} end={elbow} color={color} />
               <mesh position={elbow}>
                 <sphereGeometry args={[0.075, 10, 8]} />
@@ -372,6 +390,7 @@ function Worker({
   color: string;
   onSelect: () => void;
 }) {
+  const celebrating = !!useContext(CelebrationContext)[team[index].id];
   const actor = useRef<THREE.Group>(null);
   const travel = useRef({
     segment: 0,
@@ -407,6 +426,7 @@ function Worker({
     const state = travel.current;
     const dt = Math.min(delta, 0.05);
     state.chatCooldown = Math.max(0, state.chatCooldown - dt);
+    if (celebrating) { if (walking) setWalking(false); return; }
     if (active) {
       g.position.set(0, 0.22, 0.62);
       g.rotation.y = Math.PI;
@@ -498,10 +518,12 @@ function Worker({
         color={color}
         variant={index}
         active={active}
-        walking={walking}
-        holdingCoffee={!active && activity === 3}
+        walking={walking && !celebrating}
+        celebrating={celebrating}
+        holdingCoffee={!active && !celebrating && activity === 3}
       />
-      {!active && chatting && (
+      {celebrating && <SceneCaption position={[0, 1.95, 0]} text="Hooray! ✨" />}
+      {!active && !celebrating && chatting && (
         <SceneCaption position={[0, 1.65, 0]} text="Coffee chat ···" />
       )}
       {!active && activity === 2 && (
@@ -906,6 +928,7 @@ class SceneBoundary extends Component<
   }
 }
 export default function Office({
+  celebrations = {},
   workingRoles = [],
   selected,
   onSelect,
@@ -913,6 +936,7 @@ export default function Office({
   showLabels,
   resetKey,
 }: {
+  celebrations?: Partial<Record<Role, number>>;
   workingRoles?: Role[];
   selected: Role;
   onSelect: (id: Role) => void;
@@ -985,7 +1009,7 @@ export default function Office({
   useEffect(() => setReady(true), []);
   if (!ready) return <div className="scene-fallback">Opening the studio…</div>;
   return (
-    <SceneBoundary>
+    <CelebrationContext.Provider value={celebrations}><SceneBoundary>
       <div
         ref={stageRef}
         className={`office-play-area ${walking ? "is-walking" : ""}`}
@@ -1197,6 +1221,6 @@ export default function Office({
             </button>
           ))}
       </div>
-    </SceneBoundary>
+    </SceneBoundary></CelebrationContext.Provider>
   );
 }
