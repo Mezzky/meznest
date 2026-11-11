@@ -1,49 +1,175 @@
 # Meznest
 
-**Little team. Big ideas.** A local AI design and development studio with a cozy, interactive low-poly office.
+**Little team. Big ideas.**
 
-## Start
+Meznest is a personal AI design and development workspace presented as a cozy, interactive 3D office. Connect AI services, give your team a brief, and keep its work organized in project folders on your computer.
 
-Requires Node.js 20.9+ and Codex CLI on PATH. Tested with Node 22 on Windows.
+The application runs locally. Codex and Google Stitch perform AI work through their connected services; the office characters visualize worker activity.
+
+## Meet the team
+
+| Worker | Role | Responsibility |
+| --- | --- | --- |
+| Comoy | Team lead | Plan the work and coordinate handoffs |
+| Sukijem | Designer | Create design direction or generate screens with Google Stitch |
+| Dono | Frontend developer | Build pages, components, and interactions |
+| Kiwir | Backend developer | Build server logic, APIs, and project backend features |
+| Ijum | Reviewer / QA | Check the combined implementation and request fixes |
+
+Assign a focused task to one worker or use the full team:
+
+```text
+Comoy → Sukijem → Dono + Kiwir → Integration → Ijum
+                     parallel                    ↓
+                                    Assigned fixes → Review
+```
+
+## Get started
+
+Requires Node.js 20.9+ and a local Codex installation for coding workers. Development has been tested with Node.js 22 on Windows.
 
 ```sh
-npm install
+npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:4317. On this computer, the global npm shim is broken; `./Start-Meznest.ps1` uses the npm bundled with Node instead. Dependencies are already installed.
+Open [Meznest locally](http://127.0.0.1:4317).
 
-## Bring your team online
+On Windows, the included helper starts the app using Node directly and can install missing dependencies using the npm bundled with Node:
 
-1. Open **Settings → Connect**.
-2. If no local account is available, choose **Sign in**, then **Continue with ChatGPT**. Finish the official sign-in in your browser.
-3. Set the project folder. It defaults to this repository; select another folder before assigning client work.
-4. Create a task and select the full team or a single role.
-5. Open tasks to inspect live text and completed handoffs. Answer command/file approvals in the bell inbox. Pause interrupts active work; retry resumes from the last completed role.
+```powershell
+.\Start-Meznest.ps1
+```
 
-The team is Comoy (lead), Sukijem (designer), Dono (frontend), Kiwir (backend), and Ijum (review). Planning and design hand off sequentially; frontend and backend can then run concurrently before review. This version uses the Codex app-server protocol and your local ChatGPT sign-in, without reading authentication files or accepting API keys. Account limits apply. The computer and Meznest server must remain running for work to continue.
+Development uses Webpack to avoid the previously observed Turbopack reload loop. Both development and production bind to `127.0.0.1:4317`.
 
-## What works
+### Connect your AI services
 
-- Three.js office with orbit/zoom/reset controls, clickable avatars and labels.
-- Responsive Office, Tasks, Team and Projects views.
-- Persistent tasks, activity, handoffs, project settings and completion output.
-- Sequential planning/design, concurrent frontend/backend work, integration, automatic review fixes, pause, retry and cancellation.
-- Codex stdio initialization, account check and browser sign-in.
-- Real streamed messages, role handoffs, failures, command/file approvals and user questions.
-- Local preview links configured in Projects/Settings.
+**Codex**
 
-There is no fabricated worker activity. Before sign-in, tasks are saved but cannot execute. A real model turn still needs to be verified after sign-in on this machine.
+1. Open **Team → Codex → Connect**, or open **Settings**.
+2. Connect to the local Codex app-server. If sign-in is needed, choose **Sign in**, then **Continue with ChatGPT**, and finish the browser flow.
+3. In Team, choose a model for each worker from the catalog reported by the connected Codex account.
 
-## Boundaries
+Meznest uses the local Codex sign-in rather than asking for an OpenAI API key. Account access and usage limits still apply. The model selector uses provider-reported availability instead of a hardcoded free/paid model list.
 
-This is a single-user local application, not a hosted service. Both launch scripts bind to loopback. API handlers reject remote Host and cross-origin requests. Do not expose it through a tunnel or public reverse proxy. Only one Meznest server should use the state directory at a time.
+**Google Stitch — optional for Sukijem**
 
-Workers use workspace-write permissions, no default network access, and untrusted-command approval routed to you. Publishing, sending messages, spending money and production changes are prohibited in their role instructions. Unknown server requests fail closed. These instructions complement Codex's controls; they are not a separate OS security boundary. Review approval details before accepting.
+1. Open **Team → Google Stitch → Connect**.
+2. Follow the setup dialog to create a key in your Stitch account settings.
+3. Enter the key in the local setup field, connect, then select **Google Stitch** as Sukijem's AI service and choose an advertised model.
 
-State is written atomically to `.meznest/office.json` (ignored by Git). This first version uses a local JSON store rather than a database. Back up that file and your project. Interrupted running tasks become paused after a restart; completed handoffs survive. The first version does not automatically create Git checkpoints, launch client-project preview servers, or enforce a monetary budget. Use Git in your project to review and revert changes.
+Stitch keys entered in the UI remain in server memory and are not saved in `office.json`. Reconnect after restarting the server. The backend also supports `STITCH_API_KEY` as a key source when connecting. Stitch checks account eligibility and quotas when generating; its advertised model list does not guarantee free access.
 
-## Checks
+Claude support is postponed and is not implemented.
+
+### Create a project and find your results
+
+1. Open **Projects**, add a project name, and enter the full path to its folder. You can enable **Create the folder if it doesn't exist**.
+2. Choose **Continue work** and submit a brief for the team or a specific worker.
+3. Open **Tasks** to inspect streamed output, status, completed handoffs, and available artifacts.
+4. Find generated code and documents in the project's selected folder. Each task keeps its original folder even if you later select another project.
+5. Open a project's **History → View results** to revisit earlier work, or **Continue with a new prompt** to build on it.
+
+**Redo task** creates a new run of the same brief while keeping the original history. It does not restore an older version of the files. Use Git for file history and rollback.
+
+A configured project preview link opens the preview server you have started separately; Meznest does not automatically launch it.
+
+## Current features
+
+- Responsive Office, Tasks, Team, and Projects views with warm ivory, sage, and terracotta styling.
+- Project folders, per-project history, continuation prompts, and redo.
+- Provider connection cards and per-worker model selection.
+- Codex conversations retained by project, role, and selected model; parallel engineering copies use separate threads.
+- Task details with conversation reads and links to open Codex threads. Automatic visibility in the Codex desktop sidebar is not guaranteed.
+- Sequential planning/design, concurrent engineering, conflict-aware integration, and review-driven fixes.
+- Pause, retry, cancellation, saved handoffs, and failure reporting.
+- A procedural Three.js office with orbit, zoom, reset, and clickable workers.
+- Articulated walking, desk typing, short social pauses, and coffee-station interactions.
+- Individual completion celebrations: the finishing worker raises their hands, shows “Hooray!”, and emits colorful hand sparks/confetti for a short time.
+- A controllable boss avatar and connected executive suite.
+
+Idle movement and social animations are visual behavior, not separate AI conversations. Real task status drives working and completion states.
+
+### Walk as the boss
+
+Choose **Walk as boss** to control Mezzky. Use **WASD** to walk relative to the camera, drag to rotate, and press **E** near a teammate to inspect their work. **Esc** returns to the office overview; the home button returns the boss to the CEO suite. On-screen arrows support touch and mouse movement.
+
+Walls and furniture block movement. This tour does not start or interrupt tasks.
+
+## How the backend works
+
+| Layer | Implementation |
+| --- | --- |
+| Web interface | React, TypeScript, Next.js App Router |
+| 3D office | Three.js, React Three Fiber, and Drei |
+| Local API | Next.js route handlers running in Node.js at `/api/office` |
+| Task orchestration | Custom JavaScript `OfficeEngine` |
+| Coding connection | Local Codex app-server over standard input/output |
+| Design connection | `@google/stitch-sdk` |
+| Persistence | Atomic local JSON writes and files on disk; no database |
+
+The browser sends actions to the local API. The engine saves tasks, schedules workers, starts or resumes provider sessions, and records streamed output and handoffs. The interface polls for updates approximately every three seconds, backing off after failures.
+
+Meznest has no hosted backend or multi-user accounts. Your computer and the Meznest server must remain running for work to continue.
+
+### Parallel engineering and review
+
+When frontend and backend stages are adjacent, each engineer receives a source copy under `.meznest/runs/`. Installed dependencies are linked, and workers are instructed not to modify those shared dependencies.
+
+Before integration, changes are compared with the original snapshot. Conflicting edits between engineers or changes to the original project pause integration without overwriting conflicting files. The copies remain available for resolution; retry the parent task after resolving them.
+
+Ijum reviews the combined project and returns structured findings assigned to frontend or backend. Assigned fixes return to review automatically. After three unsuccessful review rounds, or an invalid review verdict, the task pauses for attention.
+
+Pause interrupts active Codex work, including running engineers. Work interrupted by a server restart is restored as paused. Stitch generation cannot currently be interrupted.
+
+### Stitch results and export recovery
+
+Stitch keeps a remote project and screen reference for each Meznest project and can edit the previous screen on subsequent work. Available exports are saved under:
+
+```text
+<project-folder>/design/stitch/<task-id>/
+```
+
+Results may include `screen.html`, `screen.png` or `screen.jpg`, and `stitch-reference.json`. Image-only designs are supported; HTML is not invented when Stitch does not provide it.
+
+Screen retrieval uses the canonical resource name to avoid the previous `get_screen` invalid-argument error. When a screen ID has already been saved, retry retrieves that screen rather than generating another design.
+
+A successful remote design does not guarantee a successful local download. If an export returns an HTTP error, Meznest preserves the reference and displays an export warning with a link to the Stitch project. A multi-role task pauses before implementation when exports need attention. Download failures such as HTTP 401 are reported, not treated as downloaded files.
+
+## Storage and backups
+
+**There is no database right now.**
+
+| Location | Contents |
+| --- | --- |
+| `.meznest/office.json` | Projects, tasks, history, settings, and session references |
+| `.meznest/runs/` | Engineering working copies used for integration |
+| Selected project folders | Generated code, documents, and available design exports |
+
+The `.meznest` directory is ignored by Git. Cloning or pulling the repository does not transfer local history or settings. Back up the state and project folders while the app is stopped. When moving to another computer, update project paths and sign in there separately.
+
+Only one Meznest server should use a state directory at a time. Writes to the JSON store are atomic, but this is not a database or a file-versioning system.
+
+## Permissions and limitations
+
+This version is intended for one user on one computer. API handlers reject remote Host headers and cross-origin requests. Do not expose the local server through a public tunnel or reverse proxy.
+
+Workers currently use `approvalPolicy: "never"` and `sandbox: "danger-full-access"`, as configured for autonomous local work. Routine command and file operations do not require step-by-step approval. This is broad access, not enforced confinement to the selected project folder.
+
+Role instructions tell workers to preserve user changes and prohibit publishing, deploying, spending money, sending external messages, deleting user data, and changing production systems. These instructions are not an operating-system security boundary. Protocol handling for approvals and questions remains in the engine.
+
+Current limitations include:
+
+- No cloud sync, multi-user support, or database.
+- No automatic Git checkpoints or rollback.
+- No automatic project-preview server startup.
+- No enforced spending cap or detailed usage dashboard.
+- No guarantee that every Stitch result includes downloadable HTML or images.
+- No guarantee that Codex threads automatically appear in the desktop sidebar.
+- Full-team real-world model behavior and animation quality still need broader end-to-end validation.
+
+## Checks and production startup
 
 ```sh
 npm run check
@@ -52,48 +178,42 @@ npm run build
 npm start
 ```
 
-The engine tests use a mock protocol transport to verify scheduling, approvals, failure handling and restart recovery. They do not claim real AI execution.
+The automated tests cover engine scheduling, protocol handling, recovery, collaboration/integration, and Stitch export behavior using mocks. They do not prove live provider execution.
+
+At the November 9 update, TypeScript checks and all 24 tests passed. Live Codex account/model discovery, individual coding tasks, and Stitch design generation have been observed. Stitch export authorization failures remain a known limitation. Earlier production builds reported dynamic-filesystem tracing warnings in the collaboration engine.
+
+## Recent updates
+
+### November 9, 2026
+
+- Refreshed Team service cards and worker provider/model controls.
+- Added Google Stitch integration, project/screen reuse, and artifact downloads.
+- Added persistent Codex sessions, conversation viewing, and thread links.
+- Fixed Stitch screen lookup arguments and added retry/export recovery, including image-only results.
+- Replaced the global completion overlay with individual worker celebrations and hand sparks.
+
+### November 6, 2026 and subsequent workspace improvements
+
+- Added folder-based project management, history, continuation, and redo.
+- Renamed workers to Comoy, Sukijem, Dono, Kiwir, and Ijum.
+- Improved walking, typing, coffee interactions, and short social pauses.
+- Added boss exploration, parallel engineering copies, integration checks, and review fixes.
+- Enabled autonomous worker permissions, Windows executable discovery, and Webpack development startup.
 
 ## Source map
 
-- `app/page.tsx`: workspace interface and forms
-- `app/globals.css`: responsive visual design
-- `components/Office.tsx`: procedural low-poly scene
-- `lib/engine.mjs`: saved state, Codex transport and queue
-- `app/api/office/route.ts`: local API
-- `lib/team.ts`: roles and UI types
-- `tests/engine.test.mjs`: task engine tests
+| Path | Purpose |
+| --- | --- |
+| `app/page.tsx` | Workspace UI, project management, connections, and polling |
+| `app/globals.css` | Responsive styling |
+| `components/Office.tsx` | Office scene, movement, and worker animations |
+| `app/api/office/route.ts` | Local API, actions, and artifact downloads |
+| `lib/engine.mjs` | Saved state, task scheduling, Codex transport, and handoffs |
+| `lib/collaboration.mjs` | Engineering copies and file integration |
+| `lib/stitch.mjs` | Stitch connection, generation, and exports |
+| `lib/team.ts` | Team definitions and UI types |
+| `tests/` | Engine, collaboration, and Stitch tests |
+| `Start-Meznest.ps1` | Windows startup helper |
+| `PROJECT_CONTEXT.md` | Project background and historical handoff notes |
 
-Protocol reference: https://learn.chatgpt.com/docs/app-server
-
-## November 6 workspace update
-
-- Projects now have saved folders, per-project task history, continuation prompts, and redo as a new task. Tasks retain their original project folder when selection changes.
-- Workers are Comoy, Sukijem, Dono, Kiwir, and Ijum. Office animations include articulated walking/typing, brief social pauses, and a coffee station. Visual QA remains incomplete.
-- At the user's request, workers now use approvalPolicy never and danger-full-access. Earlier workspace-write/no-network descriptions below are historical.
-- Development uses Webpack to avoid the observed Turbopack reload loop. Windows Codex executable discovery is included.
-- Nine engine tests and TypeScript checks pass. Real single-role tasks completed locally; full five-role execution remains unverified. Old test output files were deleted at the user's request; their task history remains local.
-
-## Walk as the boss
-
-Choose **Walk as boss** in the office to control Mezzky, the muscular CEO avatar. Use **WASD** to walk relative to the camera, drag to rotate the view, and press **E** near a teammate to inspect their current work. **Esc** returns to the full office overview. The home button returns the boss to the CEO suite. On-screen arrow buttons support touch and mouse movement.
-
-The new executive suite connects directly to the team studio through its central doorway. Walls and furniture block movement, and leaving the office controls releases held movement keys. This is a visual office tour; walking and inspecting do not start or interrupt worker tasks.
-
-## Team collaboration
-
-New tasks follow lead → design → frontend and backend in parallel → review. Select both engineers to enable concurrent implementation. Engineering subtasks and their streamed output appear in Tasks; the office can show both engineers working.
-
-Each engineer receives a source copy under `.meznest/runs/`. Installed dependencies are linked, and workers are instructed not to modify the shared dependencies. Engineering files are compared against the original snapshot before integration. Overlapping edits or changes made to the original project pause integration without overwriting conflicting files. Copies are retained for resolution. After resolving conflicting copies, retry the parent task to attempt integration again.
-
-Review produces structured findings assigned to frontend or backend. The assigned engineer receives the full review handoff, fixes it, and returns to review automatically. Review checks the combined project; after three unsuccessful review rounds the task pauses for attention. A missing or invalid review verdict also pauses rather than reporting success. Single-owner fixes run sequentially; paired frontend/backend fixes run concurrently when adjacent in the workflow.
-
-Pause interrupts all running engineers. Restarted work remains paused until retried. These changes are covered by simulated protocol and file-integration tests; a real signed-in project run is still needed to validate model behavior end to end.
-
-## November 9 — service connections
-
-Team now supports Codex account model selection and a Google Stitch connection for Sukijem. Stitch keys remain in server memory only (or can be supplied using STITCH_API_KEY); they are never saved in office.json. Create a key in Stitch Settings and enter it in Team. Claude is postponed.
-
-Codex sessions are retained by project, role, and selected model; parallel engineering copies use separate threads. Task details offer conversation reads and Codex deep links. Automatic desktop-sidebar visibility has not been verified. Stitch keeps a remote project/screen, edits it on subsequent work, exports HTML/images under design/stitch/<task-id>, and supplies those file paths to the next role. Stitch generation cannot currently be interrupted. Model lists come from the connected provider; advertised Stitch models do not establish free-tier entitlement.
-
-Validated: TypeScript, production build, 21 automated tests, and live Codex account/model discovery in the UI. Stitch authentication and real generation remain unverified until the user supplies a key. Build reports dynamic-filesystem tracing warnings in the existing collaboration engine.
+Read `AGENTS.md` before contributing. For Next.js changes, consult the documentation bundled with the installed package as instructed there.
