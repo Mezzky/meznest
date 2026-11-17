@@ -1,4 +1,6 @@
 "use client";
+import Usage from "@/components/Usage";
+import LocalProjects from "@/components/LocalProjects";
 import {
   useEffect,
   useState,
@@ -160,7 +162,7 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>("Office");
   const [selected, setSelected] = useState<Role>("lead");
   const [modal, setModal] = useState<
-    "task" | "settings" | "approvals" | "help" | null
+    "task" | "settings" | "usage" | "approvals" | "help" | null
   >(null);
   const [detail, setDetail] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -242,7 +244,8 @@ export default function Home() {
   const approvals = state?.approvals || [];
   const running = tasks.find((t) => !t.parallelIds && ["running", "waiting"].includes(t.status));
   const active = running?.roles[running.stage];
-  const workingRoles = tasks.filter(t=>!t.parallelIds && t.status === "running").map(t=>t.roles[t.stage]);
+  const visualTeamActive = state?.localCodex?.threads.some(t=>t.status==="working" && state.teamProjects?.[t.workspace]);
+  const workingRoles = [...new Set([...(visualTeamActive?team.map(m=>m.id):[]),...tasks.filter(t=>!t.parallelIds && t.status === "running").map(t=>t.roles[t.stage]), ...(state?.localCodex?.threads.filter(t=>t.status === "working" && t.role && team.some(m=>m.id===t.role)).map(t=>t.role as Role) || [])])];
   const member = team.find((t) => t.id === selected)!;
   const memberResult = [...tasks].reverse().find(t => t.history.some(h => h.role === selected));
   const memberTask = tasks.find(
@@ -250,6 +253,7 @@ export default function Home() {
       !t.parallelIds && t.roles[t.stage] === selected &&
       ["running", "waiting"].includes(t.status),
   );
+  const assignedLocal = state?.localCodex?.threads.filter(t=>t.role===selected) || [];
   const connected = state?.connection.status === "connected";
   const taskDetail = tasks.find((t) => t.id === detail);
   const done = tasks.filter((t) => t.status === "done").length;
@@ -340,6 +344,7 @@ export default function Home() {
             >
               <Settings size={18} /> Settings
             </button>
+            <button className="sidebar-link" onClick={() => setModal("usage")}><Clock3 size={18}/> Usage</button>
             <button className="sidebar-link" onClick={() => setModal("help")}>
               <CircleHelp size={18} /> A little guidance{" "}
               <ArrowUpRight size={15} />
@@ -864,15 +869,8 @@ export default function Home() {
                 ))}
               </div>
             )}
-            {tab === "Projects" && <div className="projects-hub">
-              <header className="projects-heading"><div><span className="eyebrow">A HOME FOR EVERY IDEA</span><h2>Your projects</h2><p>Pick up where you left off. Every brief, handoff, and result stays with its project.</p></div><button className="button primary" onClick={()=>setAddingProject(true)}><Plus size={17}/> New project</button></header>
-              <div className="projects-toolbar"><input aria-label="Search projects" placeholder="Find a project…" value={projectSearch} onChange={e=>setProjectSearch(e.target.value)}/><span>{state?.projects?.length || 0} local projects</span></div>
-              <div className="projects-grid">{state?.projects?.filter(p=>p.name.toLowerCase().includes(projectSearch.toLowerCase())).map(project=>{
-                const history=tasks.filter(t=>t.projectId===project.id); const completed=history.filter(t=>t.status==="done").length;
-                return <article className="project-card" key={project.id}><div className="project-card-top"><span className="project-folder"><FolderOpen size={25}/></span><span className="project-chip">{project.id===state.settings.projectId ? "Current project" : "Local folder"}</span></div><h3>{project.name}</h3><code title={project.workspace}>{project.workspace}</code><div className="project-counts"><span><FileText size={15}/>{history.length} tasks</span><span><CheckCheck size={15}/>{completed} completed</span></div><div className="project-card-actions"><button className="button primary" disabled={busy} onClick={async()=>{if(await act({action:"project-select",id:project.id}))openTask(false);}}>Continue work <ArrowRight size={15}/></button><button className="button outline" onClick={()=>setProjectHistory(project.id)}>History <Clock3 size={15}/></button></div>{project.previewUrl && <a className="project-preview-link" href={project.previewUrl} target="_blank" rel="noreferrer">Open project preview <ExternalLink size={14}/></a>}</article>;
-              })}</div>
-              {!state?.projects?.length && <div className="projects-empty"><FolderOpen size={36}/><h3>Your next idea starts here</h3><p>Add a folder and give your team their first brief.</p><button className="button primary" onClick={()=>setAddingProject(true)}>Add your first project</button></div>}
-            </div>}
+            {tab === "Office" && assignedLocal.length > 0 && <LocalProjects threads={assignedLocal} worker={selected} onAssign={async(id,role)=>{await act({action:"local-assign",id,role});}} />}
+            {tab === "Projects" && <LocalProjects threads={state?.localCodex?.threads || []} projects={state?.projects || []} tasks={tasks} teamProjects={state?.teamProjects} onTeam={async(workspace,enabled)=>act({action:"team-enable",workspace,enabled})} onNew={()=>setAddingProject(true)} onTask={setDetail} onAssign={async(id,role)=>act({action:"local-assign",id,role})} />}
           </div>
         </main>
         {addingProject && <Modal title="A home for your next idea" subtitle="Connect a folder on this computer. Your team saves its work there." close={()=>setAddingProject(false)}><form className="form" onSubmit={async e=>{e.preventDefault();const d=new FormData(e.currentTarget);if(await act({action:"project-add",name:d.get("name"),workspace:d.get("workspace"),createFolder:d.get("createFolder")==="on"}))setAddingProject(false);}}><label>Project name<input name="name" required placeholder="My next big idea"/></label><label>Project folder<input name="workspace" required placeholder="Paste the full folder path"/><small>Copy the folder path from File Explorer.</small></label><label className="project-create-checkbox"><input type="checkbox" name="createFolder"/> Create the folder if it doesn’t exist</label><button className="button primary full" disabled={busy}>Create project <ArrowRight size={16}/></button></form></Modal>}
@@ -889,6 +887,7 @@ export default function Home() {
             }}
           />
         )}
+        {modal === "usage" && <Modal title="Your Codex usage" subtitle="Keep an eye on your available capacity." close={()=>setModal(null)}><Usage/></Modal>}
         {modal === "settings" && state && (
           <SettingsModal
             state={state}
@@ -1225,23 +1224,11 @@ function SettingsModal({
           e.preventDefault();
           const d = new FormData(e.currentTarget);
           void save({
-            workspace: d.get("workspace"),
+            workspace: state.settings.workspace,
             previewUrl: d.get("previewUrl"),
           });
         }}
       >
-        <label>
-          Project folder
-          <input
-            name="workspace"
-            defaultValue={state.settings.workspace}
-            required
-          />
-          <small>
-            Your teammates work in this folder. Finish queued work before
-            switching.
-          </small>
-        </label>
         <label>
           Project preview <span className="muted">(optional)</span>
           <input
@@ -1260,7 +1247,7 @@ function SettingsModal({
           </p>
         </div>
         <button className="button primary full" disabled={busy}>
-          Save workspace
+          Save settings
         </button>
       </form>
     </Modal>

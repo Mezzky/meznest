@@ -372,7 +372,8 @@ export function BossController({
       ? Math.min(size.width / 9, size.height / 8)
       : Math.min(size.width / 21, size.height / 19);
     c.updateProjectionMatrix();
-  }, [camera, size, walking, reset]);
+  // Resize/layout changes must preserve the user’s scroll zoom.
+  }, [camera, walking, reset]);
   return (
     <group
       ref={actor}

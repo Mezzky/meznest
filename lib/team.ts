@@ -89,6 +89,8 @@ export type Approval = {
   }[];
 };
 export type OfficeState = {
+  teamProjects?: Record<string,boolean>;
+  localCodex?: { live?: boolean; capturedAt: string; threads: {id:string;title:string;workspace:string;status:string;updatedAt:number;activity?:string;role?:string|null}[] };
   stitch?: {status: string; models: {model: string; displayName: string}[]};
   models?: { id: string; model: string; displayName: string; isDefault?: boolean }[];
   modelError?: string;
